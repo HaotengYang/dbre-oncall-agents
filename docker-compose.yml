@@ -1,0 +1,99 @@
+# Lab environment: one MySQL, its metrics exporter, Prometheus, and a steady
+# synthetic workload. Start with "make up".
+#
+# Ports are bound to 127.0.0.1 only and use non-default numbers so they do not
+# collide with services already running on the host.
+
+name: dbre-lab
+
+services:
+  mysql:
+    image: mysql:8.0.40
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Copy .env.example to .env first}
+      MYSQL_DATABASE: shop
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Copy .env.example to .env first}
+      DIAG_DB_PASSWORD: ${DIAG_DB_PASSWORD:?Copy .env.example to .env first}
+      EXPORTER_DB_PASSWORD: ${EXPORTER_DB_PASSWORD:?Copy .env.example to .env first}
+      GATE_DB_PASSWORD: ${GATE_DB_PASSWORD:?Copy .env.example to .env first}
+    volumes:
+      - ./lab/mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./lab/mysql/init:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"
+    # Fixed limits so fault behaviour and the healthy baseline are similar on
+    # different machines.
+    cpus: "1.0"
+    mem_limit: 1g
+    healthcheck:
+      # Healthy means: every init script finished (the marker is written by
+      # the last one) and the server accepts TCP connections. Without the
+      # marker, a volume left by a failed first start would pass the ping and
+      # be reported healthy with no accounts in it.
+      test:
+        - CMD-SHELL
+        - test -f /var/lib/mysql/lab-init-complete && mysqladmin ping --host=127.0.0.1 --silent
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    command:
+      - --mysqld.address=mysql:3306
+      - --mysqld.username=shop_exporter
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: ${EXPORTER_DB_PASSWORD:?Copy .env.example to .env first}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9104/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./lab/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-19090}:9090"
+    depends_on:
+      mysqld-exporter:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  workload:
+    build: ./lab/workload
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: shop
+      APP_DB_USER: shop_app
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Copy .env.example to .env first}
+      WORKLOAD_OPERATIONS_PER_SECOND: ${WORKLOAD_OPERATIONS_PER_SECOND:-20}
+      WORKLOAD_WORKER_COUNT: ${WORKLOAD_WORKER_COUNT:-4}
+      WORKLOAD_RANDOM_SEED: ${WORKLOAD_RANDOM_SEED:-42}
+      WORKLOAD_METRICS_PORT: "8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/metrics', timeout=2)"
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql-data:

@@ -1,0 +1,13 @@
+# Secrets. API keys and passwords live only in .env.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# macOS
+.DS_Store

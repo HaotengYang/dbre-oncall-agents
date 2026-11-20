@@ -83,3 +83,45 @@ used and what it achieved.
   enforced by what the agent can do, not only by what it is told. Why: an
   instruction can be ignored; a missing tool cannot. Effect: to be recorded
   after first use.
+- 2026-11-20: **Tests written before the implementation.** The workload's
+  pacing, query-mix and settings tests were written and seen to fail (module
+  not found) before any workload code existed; the commit order shows it.
+  Effect: the "no burst after a stall" rule was pinned down as a test before
+  the pacer was written, instead of being discovered later.
+- 2026-11-20: **Reviewer subagent before commit, twice.** The lab module was
+  reviewed from a fresh context before its first commit, and the fixes were
+  reviewed again before they were committed. Round one: 2 must-fix, 3
+  suspected. Round two: approve, with 3 minor points. Effect: two real
+  defects were caught that every test had passed over:
+  - A first start that failed part-way left a data volume that the next start
+    reported as healthy with no accounts in it.
+  - The secrets test failed on the documented fresh-clone path; it only passed
+    on the machine where it was written.
+- 2026-11-20: **Verify a "suspected" finding by experiment before acting.**
+  The reviewer suspected a held lock would leak server sessions. A 100 s table
+  lock was run against the lab: sessions went 6 -> 10 -> 14 -> 18. The finding
+  was real, was fixed, and the experiment became a permanent lab test.
+
+## Mistakes in generated code, found by running it
+
+- 2026-11-20: The seed SQL used `row_number` as a column alias. It is a
+  reserved word in MySQL 8. Found on the first real start.
+- 2026-11-20: The lab tests kept every database connection open for the whole
+  test session. Against the lab's `max_connections = 60` the tests themselves
+  pushed connections to 45 and made the "healthy baseline" test fail. The
+  failure looked like a lab problem and was a test problem. Connections are now
+  closed after each test; the peak during a run is 5.
+- 2026-11-20: A digest test matched rows produced by other tests' own queries.
+  The filter now matches the workload statement exactly.
+- 2026-11-20: Unexplained and recorded as such: once, shortly after a fresh
+  server start, the digest table held a duplicate row with a zero count. Not
+  reproduced in 1,400 polls. Carried into the SQL agent proposal.
+
+## Measurements
+
+- 2026-11-20, lab on an Apple Silicon laptop, MySQL limited to 1 CPU / 1 GiB:
+  first start including image pulls 68 s; reset with images cached 26 s;
+  idle MySQL about 5% of one CPU and 630 MiB; workload 20.0 operations/s,
+  p99 9 to 14 ms; idle connections 5 of 60. Unindexed scan of `orders`
+  (200,000 rows) about 30 ms against 0.5 ms through an index.
+
