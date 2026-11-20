@@ -61,11 +61,17 @@ def close_quietly(connection):
         return
     try:
         connection.close()
-    except pymysql.MySQLError:
+    except Exception:  # closing a broken connection must never stop a worker
         pass
 
 
-def run_worker(worker_index, settings, stop_requested):
+def run_worker(worker_index, settings, stop_requested, open_connection=open_connection):
+    """Runs operations until stop is requested.
+
+    Any failure, of any exception type, is counted, logged and followed by a
+    reconnect. A worker must never exit on its own: a silently dead worker
+    would lower the rate while every health check stayed green.
+    """
     random_source = random.Random(settings.random_seed + worker_index)
     query_mix = build_query_mix(DEFAULT_SEED_SIZES)
     pacer = RatePacer(settings.operations_per_second / settings.worker_count)
@@ -75,7 +81,7 @@ def run_worker(worker_index, settings, stop_requested):
         if connection is None:
             try:
                 connection = open_connection(settings)
-            except pymysql.MySQLError as connect_error:
+            except Exception as connect_error:
                 CONNECTION_FAILURES_TOTAL.inc()
                 logger.warning("worker %d cannot connect: %s", worker_index, connect_error)
                 stop_requested.wait(RECONNECT_DELAY_SECONDS)
@@ -88,7 +94,7 @@ def run_worker(worker_index, settings, stop_requested):
             with connection.cursor() as cursor:
                 cursor.execute(operation.sql, operation.parameters)
                 cursor.fetchall()
-        except pymysql.MySQLError as statement_error:
+        except Exception as statement_error:
             OPERATIONS_TOTAL.labels(operation.name, "error").inc()
             logger.warning("worker %d %s failed: %s", worker_index, operation.name, statement_error)
             close_quietly(connection)
