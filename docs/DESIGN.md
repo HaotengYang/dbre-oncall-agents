@@ -1,7 +1,8 @@
 # Design
 
-Status: revision 3, incorporating the owner's two reviews of 2026-11-19. Awaiting
-owner re-review. Nothing below is implemented yet.
+Status: approved by the owner on 2026-11-19. Design review is closed; this
+document is frozen. Details are settled in each module's proposal. Nothing
+below is implemented yet.
 
 ## 1. Problem
 
@@ -161,6 +162,12 @@ diagnosed, and "rows examined far above rows sent, no index used" is exactly
 the signal for a missing index. The collector takes two snapshots and works on
 the difference. `mysql.slow_log` is not used.
 
+The digest text in that table is normalized: literal values are replaced by
+placeholders, so it cannot be explained as it stands. `EXPLAIN` is run on the
+sample statement stored alongside the digest (`QUERY_SAMPLE_TEXT`), which is a
+real statement with real values. If the sample is truncated, the statement is
+not explained.
+
 Other sources, all read over SQL:
 
 | Evidence | Source |
@@ -292,12 +299,15 @@ tier checks that the chain works at all.
 - **Incomplete evidence:** the injected fault is a hit. `undetermined` is
   acceptable and counted in its own column, not as a hit. A different fault,
   or `healthy`, is a miss.
+- **Healthy cases:** `undetermined` on a healthy system is counted in its own
+  column as a mild false alarm. It is not as bad as naming a fault that is not
+  there, but it still sends a human to look at nothing.
 - **`undetermined` cannot be used to hide.** The report always shows the
   undetermined rate per tier. A system that answers `undetermined` to
   everything scores zero hits and a visible 100% undetermined rate.
 
 The report shows, per tier and per backend: hit rate, false-positive rate,
-symptom-as-cause rate, undetermined rate.
+symptom-as-cause rate, undetermined rate, and undetermined-on-healthy rate.
 
 ## 8. What is deliberately not built, and why
 
@@ -335,18 +345,22 @@ a crawl or get skipped. Two levels keep commits small and keep `main` verified.
    model, no API. The specific model is proposed with the SOP agent module.
 4. **Thresholds.** The hit-rate and false-positive thresholds under `evals/`
    are the owner's to set once the rule-engine baseline numbers exist.
-5. **Scoring of incomplete-evidence cases.** Section 7 proposes that
-   `undetermined` is acceptable but not a hit. This is Claude's proposal and
-   needs the owner's confirmation, since it defines what the evals reward.
-6. **Slow-query source.** Section 5 chooses `performance_schema` over
-   `mysql.slow_log`. The owner asked for the source to be made explicit; the
-   choice itself is Claude's proposal and needs confirmation.
+5. ~~Scoring of incomplete-evidence cases.~~ Closed 2026-11-19: approved as
+   proposed, plus `undetermined` on healthy cases counted separately.
+6. ~~Slow-query source.~~ Closed 2026-11-19: `performance_schema`, with
+   `EXPLAIN` run on the stored sample statement.
 
 ## 11. Decisions log
 
 "Proposed by" records who first put the idea forward. "Approved by" records who
 made the call. Every decision is the owner's; the first column shows where the
 idea came from.
+
+During design review the owner also used a separate, independent Claude chat
+session as a second opinion on this document. Several of the changes listed
+under "Owner" below (eval difficulty, `EXPLAIN` safety, the safety gate's risk
+assessment, among others) originated in that review; the owner decided which
+to adopt. Rows are not re-attributed one by one.
 
 | Date | Decision | Proposed by | Approved by |
 |---|---|---|---|
@@ -366,13 +380,16 @@ idea came from.
 | 2026-11-19 | End-to-end and replay numbers are reported separately, never mixed. | Owner | Owner |
 | 2026-11-19 | Model list and spending cap approved by the owner before any paid run. | Claude | Owner |
 | 2026-11-19 | Hard eval tier: cascading faults, healthy-but-looks-faulty, incomplete evidence. | Owner | Owner |
-| 2026-11-19 | Cascading ground truth is the originating fault; symptom-as-cause counted separately. | Owner asked for a rule; Claude proposed this one | Pending owner review |
+| 2026-11-19 | Cascading ground truth is the originating fault; symptom-as-cause counted separately. | Owner asked for a rule; Claude proposed this one | Owner |
 | 2026-11-19 | Plain `EXPLAIN` only, `SELECT` only, single statement, timeout; `EXPLAIN ANALYZE` forbidden. | Owner | Owner |
 | 2026-11-19 | Captured SQL is untrusted input to model prompts. | Owner | Owner |
-| 2026-11-19 | Eval case with hostile text inside a captured statement. | Claude | Pending owner review |
-| 2026-11-19 | Slow-query data from `performance_schema`, not `mysql.slow_log`; least-privilege grant list. | Owner asked for the source to be explicit; Claude proposed this one | Pending owner review |
+| 2026-11-19 | Eval case with hostile text inside a captured statement. | Claude | Owner |
+| 2026-11-19 | Slow-query data from `performance_schema`, not `mysql.slow_log`; least-privilege grant list. | Owner asked for the source to be explicit; Claude proposed this one | Owner |
 | 2026-11-19 | Shadow table is a capped sample; sample timing is never scaled to the full table. | Owner | Owner |
 | 2026-11-19 | Risk assessment covers at least table size, long transactions, online capability. | Owner | Owner |
-| 2026-11-19 | Redundant-index check and short lock wait timeout for the DDL session. | Claude | Pending owner review |
+| 2026-11-19 | Redundant-index check and short lock wait timeout for the DDL session. | Claude | Owner |
 | 2026-11-19 | Two verification levels: unit tests per commit, full verify before merging to `main`. | Owner | Owner |
 | 2026-11-19 | Embeddings from a small local model, no API. | Owner | Owner |
+| 2026-11-19 | `undetermined` on a healthy case is counted separately as a mild false alarm. | Owner | Owner |
+| 2026-11-19 | `EXPLAIN` uses the digest table's stored sample statement, not the normalized digest text. | Owner | Owner |
+| 2026-11-19 | Design review closed; this document is frozen. | Owner | Owner |
