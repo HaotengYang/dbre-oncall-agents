@@ -25,14 +25,23 @@ Deadline: Monday 2026-11-23, submit before 15:00 (hard cutoff 18:00).
    - Compares the rule-engine path against the LLM path.
    - Supports multi-model comparison on four dimensions: response time,
      accuracy, stability (consistency across repeated runs of one case), cost.
+   - Model comparison replays recorded evidence. Reports keep two layers of
+     numbers apart: end-to-end (whole chain) and replay (model reasoning only).
+     Never mix them.
+   - Includes queries where the alert wording differs from the runbook wording,
+     and reports retrieval hit rate for keyword vs vector.
 4. **Agents**
    - Orchestrator: receives the alert, dispatches, merges a diagnosis report.
    - Metrics agent: reads Prometheus metrics, identifies anomaly type and onset.
    - SQL agent: inspects processlist, slow query log and EXPLAIN; suggests indexes.
-   - SOP agent: retrieves handling steps from five or six runbooks.
+   - SOP agent: retrieves handling steps from about ten runbooks. Retrieval is
+     an interface with two implementations: keyword (default, no dependencies)
+     and vector (optional).
    - Inspection agent: scheduled checks that surface risks early.
    - If the root cause is not settled within three rounds, output
      "undetermined, escalate to a human". Never force a conclusion.
+   - Every report carries the root-cause label and a plain-language paragraph
+     explaining the basis for it.
 5. **Change safety gate** - supports exactly one change type: adding an index.
    Shadow-table rehearsal, risk assessment, generated rollback plan; high-risk
    operations require human confirmation.
@@ -73,7 +82,8 @@ agents -> change safety gate -> docs.
 4. The reviewer reviews before commit. Changes made in response to review go in
    their own commit.
 5. Cases and thresholds under `evals/` must not be modified without the owner's
-   explicit consent.
+   explicit consent. The model list and spending cap for any paid
+   model run also need the owner's approval first.
 6. Problems the owner points out are fixed and recorded as rules in this file.
 7. Build the minimum usable version first. Do not over-engineer.
 
