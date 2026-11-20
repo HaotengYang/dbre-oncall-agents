@@ -1,0 +1,18 @@
+# Lab MySQL settings. Values here are chosen for the lab, not for production.
+[mysqld]
+# Low on purpose: connection exhaustion can be reproduced with a few dozen
+# connections instead of hundreds. The MySQL default is 151.
+max_connections = 60
+
+# Sized to sit comfortably inside the container's 1 GiB memory limit.
+innodb_buffer_pool_size = 256M
+
+# The diagnosis agents read statement digests and their sample statements from
+# performance_schema. Longer limits mean fewer truncated samples; a truncated
+# sample cannot be explained.
+performance_schema = ON
+max_digest_length = 4096
+performance_schema_max_digest_length = 4096
+performance_schema_max_sql_text_length = 4096
+
+long_query_time = 1
