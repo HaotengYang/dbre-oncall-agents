@@ -51,12 +51,23 @@ def test_no_real_secret_value_appears_in_any_tracked_file():
     env_path = REPOSITORY_ROOT / ".env"
     if not env_path.exists():
         pytest.skip("no .env on this machine, nothing to compare against")
-    secret_values = {
-        value
+    placeholder_values = set(read_assignments(REPOSITORY_ROOT / ".env.example").values())
+    real_secrets = {
+        name: value
         for name, value in read_assignments(env_path).items()
-        if name.endswith(SECRET_VARIABLE_SUFFIXES) and len(value) >= 8
+        if name.endswith(SECRET_VARIABLE_SUFFIXES) and value not in placeholder_values
     }
-    assert secret_values, ".env has no secret values to check"
+    if not real_secrets:
+        # A fresh clone whose .env is an unedited copy of .env.example has only
+        # placeholders, which are meant to be public.
+        pytest.skip(".env holds only the example placeholders")
+    too_short_to_search_for = sorted(
+        name for name, value in real_secrets.items() if len(value) < 8
+    )
+    assert too_short_to_search_for == [], (
+        "these secrets are under 8 characters, too short to search for reliably"
+    )
+    secret_values = set(real_secrets.values())
 
     tracked_and_new_files = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
