@@ -115,10 +115,29 @@ agents -> change safety gate -> docs.
 
 ## Language
 
-Write the fault injector in Python first. After reading that code, the owner
-decides whether to continue in Python or switch to Java. Do not assume the
-language for later modules before that decision.
+Python for the whole project (owner's decision, 2026-11-20, after reading the
+lab code).
 
 ## Rules learned from owner feedback
 
-(None yet. Append here, newest last, with the date.)
+Append here, newest last, with the date.
+
+### 2026-11-20: work in small steps
+
+Background: one working round ran for over an hour and produced 14 commits.
+The owner could not follow it.
+
+1. Do exactly one step of the plan in `docs/PROGRESS.md` at a time.
+2. After each step, stop. Do the next step only when the owner replies
+   "继续" (continue).
+3. The report after each step is at most 15 lines, in Chinese, and contains
+   only:
+   - what this step did, in two or three plain sentences;
+   - one command the owner can run by hand, and what they should see;
+   - decisions needed from the owner (write "无" if none);
+   - what the next step is.
+   Details go in `docs/PROGRESS.md`, not in the report.
+4. If a step is estimated at more than 40 minutes, split it before starting.
+5. Ask the owner before installing any software on the owner's computer.
+
+If the schedule slips, tell the owner. The owner decides what to cut.

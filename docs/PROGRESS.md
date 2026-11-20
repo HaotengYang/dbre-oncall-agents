@@ -20,28 +20,62 @@ Updated at the end of every working session.
   limits, exporter, Prometheus, Python workload, four least-privilege accounts.
   Unit tests 40, lab tests 47, lifecycle tests 2, all passing. Reviewed twice.
 
-## In progress
+- 2026-11-20: Lab environment merged into `main`.
 
-- Owner to run the lab by hand and confirm the module; then merge into `main`.
+## Plan
 
-## Remaining (in build order)
+One step at a time; the owner says "继续" before the next one starts.
+Schedule target: A and B on Friday 11-20, C on Saturday 11-21, D and E on
+Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 
-1. Fault injector (Python first; owner then decides Python vs Java)
-2. Eval skeleton and rule-engine baseline
-3. Agents: metrics, SQL, SOP, inspection, orchestrator
-4. Change safety gate
-5. `README.md` and `AI_WORKFLOW.md`
+### A. Fault injector
 
-Also remaining: the `verify` skill in `.claude/skills/` (needs the fault
-injector and evals to exist).
+- [ ] A1. Proposal and completion criteria (no code)
+- [ ] A2. Missing-index slow query: one variant, inject and clear
+- [ ] A3. Lock wait: one variant
+- [ ] A4. Connection exhaustion: one variant; ask the owner how the diagnosis
+      account should connect when connections are exhausted
+- [ ] A5. Several variants per class, plus cascading faults
+
+### B. Eval system
+
+- [ ] B1. Proposal: case format, ground truth, scoring
+- [ ] B2. Eval runner plus rule engine for one fault class; first report
+- [ ] B3. Rule engine covers all cases; baseline numbers; owner sets thresholds
+- [ ] B4. Evidence recording and replay
+- [ ] B5. `verify` skill
+
+### C. Agents
+
+- [ ] C1. Evidence collectors (read-only)
+- [ ] C2. SQL agent and metrics agent, in two parallel worktrees
+- [ ] C3. Orchestrator and diagnosis report
+- [ ] C4. Connect the LLM; owner approves model list and budget first; then
+      multi-model comparison
+- [ ] C5. SOP retrieval: ten runbooks, keyword and vector, hit-rate comparison
+- [ ] C6. Inspection agent
+
+### D. Change safety gate
+
+- [ ] D1. Proposal and completion criteria
+- [ ] D2. Allowlist and property-based tests
+- [ ] D3. Shadow rehearsal, risk assessment, rollback plan
+
+### E. Wrap-up
+
+- [ ] E1. README (covering both Docker Desktop and Colima)
+- [ ] E2. `AI_WORKFLOW.md`
+- [ ] E3. Fresh clone in a new directory; follow the README from the start
 
 ## Open decisions
 
 - See "Open questions for the owner" in `docs/DESIGN.md`.
-- `orders` size: an unindexed scan of 200,000 rows takes about 30 ms. Owner to
-  decide whether to enlarge the table, with the fault injector proposal.
+- `orders` stays at 200,000 rows until the fault injector gives measured
+  numbers (owner, 2026-11-20).
 - During connection exhaustion the diagnosis account cannot connect either.
-  To be settled in the fault injector proposal.
+  Options go to the owner in step A4.
+- Digest-table rows with a zero count are ignored by the SQL agent; the cause
+  of the one sighting stays recorded as not established (owner, 2026-11-20).
 - The gate's `INDEX` privilege also allows dropping existing indexes, including
   a primary key. The privilege layer cannot narrow this; the gate's allowlist
   must. To be settled in the change safety gate proposal.
