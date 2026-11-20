@@ -63,7 +63,7 @@ time, end time, and what was changed. Evals read onset time and label from it.
 |---|---|---|---|
 | A2 | `missing_index.dropped_index` | Drops `idx_orders_customer_created`. The workload's "recent orders for a customer" query (a quarter of all traffic) turns from an index lookup into a scan of 200,000 rows. No extra traffic is added. | Recreate the index. |
 | A3 | `lock_wait.long_transaction` | Opens a transaction, locks a quarter of the `orders` rows with `SELECT ... FOR UPDATE`, and holds it. Workload updates to those rows wait and then fail. | Roll back and close. |
-| A4 | `connection_exhaustion.idle_flood` | Opens idle connections as `shop_app` until about 55 of 60 are in use, and holds them. | Close them. |
+| A4 | `connection_exhaustion.idle_flood` | Opens idle connections as `shop_app` until the server refuses more, and holds them. (Corrected 2026-11-20: the first draft said "about 55 of 60", which contradicted criterion 13; a new connection is only refused when every slot is taken.) | Close them. |
 
 More variants and the cascading faults are listed in step A5 and proposed then.
 
