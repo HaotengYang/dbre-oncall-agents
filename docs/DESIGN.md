@@ -1,6 +1,7 @@
 # Design
 
-Status: draft, awaiting owner review. Nothing below is implemented yet.
+Status: revision 2, incorporating the owner's review of 2026-11-19. Awaiting
+owner re-review. Nothing below is implemented yet.
 
 ## 1. Problem
 
@@ -56,11 +57,11 @@ no-API-key fallback and the baseline the LLM has to beat.
 | Evidence collectors | Read-only access to Prometheus and MySQL (processlist, lock waits, slow query log, EXPLAIN). Return structured data. | Interpreting the data. |
 | Metrics agent | From metrics, name the anomaly type and when it started. | Looking at SQL. |
 | SQL agent | From processlist, slow log and EXPLAIN, name the offending statements and suggest an index. | Applying the index. |
-| SOP agent | Retrieve the relevant handling steps from five or six runbooks. | Inventing steps that are not in a runbook. |
+| SOP agent | Retrieve the relevant handling steps from about ten runbooks, through a retrieval interface with two implementations (keyword, vector). | Inventing steps that are not in a runbook. |
 | Inspection agent | Run scheduled checks and report risks before they page anyone. | Reacting to alerts. |
 | Orchestrator | Receive the alert, dispatch agents, merge findings into one report. Stop after three rounds. | Reasoning about raw evidence itself. |
 | Change safety gate | For an "add index" change only: rehearse on a shadow table, assess risk, produce a rollback plan, require human confirmation when risk is high. | Any other kind of change. |
-| Eval system | Run labelled cases, report hit rate and false-positive rate, compare rule engine vs LLM, compare models on latency, accuracy, stability and cost. | Being modified to make numbers look better. |
+| Eval system | Run labelled cases, report hit rate and false-positive rate, compare rule engine vs LLM, compare models on latency, accuracy, stability and cost, compare keyword vs vector retrieval. Report end-to-end and replay numbers separately. | Being modified to make numbers look better. |
 
 ### Diagnosis contract
 
@@ -68,6 +69,9 @@ Every diagnosis is one value from a closed set, plus supporting detail:
 
 - `root_cause`: `missing_index_slow_query` | `lock_wait` |
   `connection_exhaustion` | `healthy` | `undetermined`
+- `rationale`: a short paragraph in plain language explaining why this cause
+  was chosen and why the alternatives were ruled out. The label is for scoring;
+  the paragraph is for the engineer reading the report.
 - `onset`: when the anomaly started
 - `evidence`: the specific metrics and statements the conclusion rests on
 - `recommended_steps`: steps quoted from a runbook, with the runbook named
@@ -102,11 +106,16 @@ dangerous statements is only as good as the list; an allowlist fails closed.
 This is what the property-based tests check: random SQL never gets through
 unless it is exactly the permitted shape.
 
-**Keyword retrieval for runbooks, not a vector database.** With five or six
-runbooks, lexical scoring is accurate enough, deterministic, and needs no
-embedding model or extra service. Embeddings pay off when the corpus is large
-or the wording of queries and documents diverges; neither holds here. The
-retrieval step sits behind an interface so it can be swapped later.
+**Runbook retrieval behind an interface: keyword by default, vector optional.**
+Keyword scoring is the default because it has no dependencies, is
+deterministic, and keeps the no-API-key path fully working. Its known weakness
+is vocabulary mismatch: an alert says "requests are piling up" while the
+runbook says "connection exhaustion". Vector retrieval handles that case but
+needs an embedding model. Rather than argue which is better, the project
+measures it: about ten runbooks, eval queries that deliberately include alerts
+worded differently from the documents, and a report of retrieval hit rate for
+both implementations side by side. Cost: two implementations and an optional
+dependency.
 
 **Hand-written orchestration loop, no agent framework.** The control flow is
 small: dispatch, collect, check agreement, at most three rounds. Writing it
@@ -116,7 +125,20 @@ using only what Claude Code ships with.
 **Evals run against a real MySQL, not mocked evidence.** End-to-end cases
 inject a real fault and diagnose a real database, because a diagnosis that only
 works on hand-written fixtures proves little. Cost: runs take minutes, not
-seconds. See open question 3 for how model comparison stays affordable.
+seconds.
+
+**Two layers of numbers, never mixed.** Model comparison does not re-inject
+faults for every model. The evidence for each case is recorded once and
+replayed to every model, so all models see identical input, stability can be
+measured as agreement across repeated runs, and cost stays bounded. The report
+therefore has two separate sections:
+
+- *End-to-end*: inject -> collect -> diagnose -> score. Measures the whole
+  chain, including evidence collection and timing.
+- *Replay*: recorded evidence -> model -> score. Measures model reasoning only.
+
+A replay number says nothing about whether evidence collection works, so the
+two are always labelled and reported apart.
 
 ## 5. What is deliberately not built, and why
 
@@ -126,7 +148,7 @@ seconds. See open question 3 for how model comparison stays affordable.
 | Automatic remediation | Killing queries or changing configuration on a diagnosis that may be wrong amplifies mistakes. The system recommends; a human acts. |
 | Change types other than adding an index | Each change type needs its own rehearsal and rollback logic. One done properly is worth more than several done loosely. |
 | Fault classes beyond the three | Depth per class (several variants, healthy cases, false-positive measurement) matters more than breadth. |
-| Vector database and embeddings | See trade-offs: the corpus is too small to justify them. |
+| A vector database service | Vector retrieval is optional and, at about ten runbooks, an in-memory index is enough. A separate database service would add setup without changing the result. |
 | Web UI | The output is a report on the command line. A UI adds code without adding evidence of diagnostic quality. |
 | Multi-instance or cloud deployment | The lab is one local MySQL. Deployment is not what is being demonstrated. |
 
@@ -137,11 +159,21 @@ seconds. See open question 3 for how model comparison stays affordable.
 2. **Which models to compare, and the budget.** Multi-model comparison costs
    real API money (cases x repeats x models). The owner approves the model list
    and a spending cap before any paid run.
-3. **Recorded evidence for model comparison.** Proposal: live injection for
-   end-to-end tests, but for comparing models, record the evidence once per
-   case and replay the same evidence to every model. That makes the comparison
-   fair (identical input), makes stability measurable (same input, repeated
-   runs), and keeps cost and time down. Needs owner approval because it shapes
-   the eval design.
+3. **Embedding source for vector retrieval.** A local embedding model keeps
+   the project free to run but adds a large download; an embedding API is small
+   to set up but costs money and needs a key. To be proposed with the SOP agent
+   module.
 4. **Thresholds.** The hit-rate and false-positive thresholds under `evals/`
    are the owner's to set once the rule-engine baseline numbers exist.
+
+## 7. Decisions log
+
+| Date | Decision | Decided by |
+|---|---|---|
+| 2026-11-19 | Closed set of root causes, plus a plain-language rationale in every report. | Owner |
+| 2026-11-19 | Agents are read-only; model output is never executed. | Owner |
+| 2026-11-19 | Safety gate uses an allowlist. | Owner |
+| 2026-11-19 | Retrieval is an interface with keyword (default) and vector (optional) implementations; about ten runbooks; evals include wording-mismatch queries and compare both. Replaces the draft's keyword-only design. | Owner |
+| 2026-11-19 | Evals run against a real MySQL. | Owner |
+| 2026-11-19 | Record evidence once and replay it for model comparison; end-to-end and replay numbers reported separately. | Owner |
+| 2026-11-19 | Model list and spending cap are approved by the owner before any paid run. | Owner |
