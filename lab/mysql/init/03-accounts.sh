@@ -62,8 +62,10 @@ GRANT SELECT ON performance_schema.* TO 'shop_exporter'@'%';
 -- INDEX covers CREATE INDEX and DROP INDEX and nothing else. SELECT lets the
 -- gate copy a sample into the shadow database and explain queries.
 CREATE USER 'shop_gate'@'%' IDENTIFIED BY '${GATE_DB_PASSWORD}';
+-- The underscore is escaped: in a database-level grant an unescaped "_" is a
+-- one-character wildcard and would also match names such as "shopXshadow".
 GRANT SELECT, INDEX ON shop.* TO 'shop_gate'@'%';
-GRANT CREATE, DROP, ALTER, INDEX, SELECT, INSERT ON shop_shadow.* TO 'shop_gate'@'%';
+GRANT CREATE, DROP, ALTER, INDEX, SELECT, INSERT ON \`shop\\_shadow\`.* TO 'shop_gate'@'%';
 SQL
 then
   touch "$lab_init_marker"

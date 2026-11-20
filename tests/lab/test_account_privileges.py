@@ -61,7 +61,6 @@ def test_diag_can_read_statement_digests_with_sample_text(connect_as):
         "WHERE SCHEMA_NAME = 'shop' AND DIGEST_TEXT = %s",
         (WORKLOAD_ORDER_BY_ID_DIGEST,),
     )
-
     # Exactly the workload's order_by_id statement. Other digests on orders
     # exist too (these tests run their own queries), so the filter is specific.
     assert len(rows) == 1, rows
@@ -200,6 +199,24 @@ def test_gate_cannot_do_anything_to_shop_except_indexes(connect_as, forbidden_sq
     assert fetch_all(diag_connection, "SELECT * FROM shop.products WHERE id = 1") == first_product_before
     assert fetch_value(diag_connection, "SELECT COUNT(*) FROM shop.products") == 1_000
     assert fetch_value(diag_connection, "SELECT COUNT(*) FROM shop.orders") == 200_000
+
+
+def test_gate_grant_does_not_match_similarly_named_databases(connect_as):
+    """An unescaped "_" in the shadow grant would act as a wildcard."""
+    gate_connection = connect_as("shop_gate")
+
+    try:
+        assert_denied(gate_connection, "CREATE DATABASE shopXshadow")
+    finally:
+        root_connection = connect_as("root")
+        with root_connection.cursor() as cursor:
+            cursor.execute("DROP DATABASE IF EXISTS shopXshadow")
+
+    visible_databases = {
+        row[0] for row in fetch_all(gate_connection, "SHOW DATABASES")
+    }
+    assert "shopXshadow" not in visible_databases
+    assert "shop_shadow" in visible_databases
 
 
 def test_gate_can_add_and_drop_an_index_online_in_shop(connect_as):
