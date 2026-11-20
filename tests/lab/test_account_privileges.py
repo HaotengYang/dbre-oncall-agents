@@ -162,6 +162,50 @@ def test_app_cannot_change_schema(connect_as):
     assert "idx_app_should_fail" not in index_names(diag_connection, "shop", "orders")
 
 
+# ---- fault injector account ---------------------------------------------
+
+
+def test_fault_account_can_read_the_lab_marker(connect_as):
+    fault_connection = connect_as("shop_fault")
+
+    assert fetch_all(fault_connection, "SELECT name FROM lab_meta.environment") == (("dbre-lab",),)
+
+
+@pytest.mark.parametrize(
+    "forbidden_sql",
+    [
+        "SELECT id FROM shop.orders WHERE id = 1",
+        "UPDATE shop.orders SET status = 'cancelled' WHERE id = 1",
+        "DELETE FROM shop.orders WHERE id = 1",
+        "INSERT INTO shop.products (id, sku, name, category, price_cents) "
+        "VALUES (999999, 'x', 'x', 'x', 1)",
+        "DROP TABLE shop.orders",
+        "TRUNCATE TABLE shop.orders",
+        "CREATE TABLE shop.fault_should_fail (id INT)",
+        "ALTER TABLE shop.products ADD COLUMN fault_should_fail INT",
+        "UPDATE lab_meta.environment SET name = 'not-the-lab'",
+        "DELETE FROM lab_meta.environment",
+        "DROP DATABASE lab_meta",
+        "CREATE DATABASE fault_should_fail",
+        "SELECT COUNT(*) FROM performance_schema.events_statements_summary_by_digest",
+        "SET GLOBAL max_connections = 1000",
+    ],
+)
+def test_fault_account_can_only_touch_indexes_and_read_the_marker(connect_as, forbidden_sql):
+    fault_connection = connect_as("shop_fault")
+    diag_connection = connect_as("shop_diag")
+    root_connection = connect_as("root")
+    tables_before = shop_table_names(diag_connection)
+
+    assert_denied(fault_connection, forbidden_sql)
+
+    assert shop_table_names(diag_connection) == tables_before
+    assert fetch_value(diag_connection, "SELECT COUNT(*) FROM shop.orders") == 200_000
+    assert fetch_value(diag_connection, "SELECT COUNT(*) FROM shop.products") == 1_000
+    assert fetch_value(diag_connection, "SELECT @@global.max_connections") == 60
+    assert fetch_all(root_connection, "SELECT name FROM lab_meta.environment") == (("dbre-lab",),)
+
+
 # ---- change safety gate account ----------------------------------------
 
 
