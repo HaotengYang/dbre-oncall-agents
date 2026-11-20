@@ -1,50 +1,57 @@
-"""Injection records are the evals' ground truth, so their shape is pinned."""
+"""Injection records are the evals' ground truth, and the injector lock is
+what keeps two faults from overlapping; both are pinned here."""
 
 import json
-import os
-
-import pytest
+import multiprocessing
+import time
 
 from fault_injector.records import (
-    ActiveFaultError,
-    claim_active_fault,
-    read_active_fault,
+    injection_has_ended,
+    new_injection_id,
+    read_claim,
     read_injection_events,
     record_injection_ended,
     record_injection_started,
-    release_active_fault,
+    release_injector_lock,
+    remove_claim,
+    try_acquire_injector_lock,
+    write_claim,
 )
 
 
-def test_started_and_ended_events_share_an_injection_id(tmp_path):
-    injection_id = record_injection_started(
-        tmp_path, fault_id="missing_index.dropped_index",
-        root_cause="missing_index_slow_query", started_at="2026-11-20T10:00:00+00:00",
-        changes=["dropped index idx_orders_customer_created"],
+def record_one_injection(state_directory, fault_id="lock_wait.long_transaction", hour=10):
+    injection_id = new_injection_id()
+    record_injection_started(
+        state_directory, injection_id=injection_id, fault_id=fault_id,
+        root_cause="lock_wait", started_at=f"2026-11-20T{hour}:00:00+00:00",
+        changes=["hold row locks"],
     )
+    return injection_id
+
+
+def test_started_and_ended_events_share_an_injection_id(tmp_path):
+    injection_id = record_one_injection(tmp_path)
     record_injection_ended(
         tmp_path, injection_id=injection_id, ended_at="2026-11-20T10:05:00+00:00",
         ended_by="injector",
     )
 
-    events = read_injection_events(tmp_path)
+    started, ended = read_injection_events(tmp_path)
 
-    assert [event["event"] for event in events] == ["started", "ended"]
-    assert events[0]["injection_id"] == events[1]["injection_id"] == injection_id
-    assert events[0]["fault_id"] == "missing_index.dropped_index"
-    assert events[0]["root_cause"] == "missing_index_slow_query"
-    assert events[0]["started_at"] == "2026-11-20T10:00:00+00:00"
-    assert events[0]["changes"] == ["dropped index idx_orders_customer_created"]
-    assert events[1]["ended_at"] == "2026-11-20T10:05:00+00:00"
-    assert events[1]["ended_by"] == "injector"
+    assert started == {
+        "event": "started", "injection_id": injection_id,
+        "fault_id": "lock_wait.long_transaction", "root_cause": "lock_wait",
+        "started_at": "2026-11-20T10:00:00+00:00", "changes": ["hold row locks"],
+    }
+    assert ended == {
+        "event": "ended", "injection_id": injection_id,
+        "ended_at": "2026-11-20T10:05:00+00:00", "ended_by": "injector",
+    }
 
 
 def test_each_event_is_one_json_line_and_earlier_lines_are_kept(tmp_path):
     for hour in (10, 11):
-        injection_id = record_injection_started(
-            tmp_path, fault_id="lock_wait.long_transaction", root_cause="lock_wait",
-            started_at=f"2026-11-20T{hour}:00:00+00:00", changes=[],
-        )
+        injection_id = record_one_injection(tmp_path, hour=hour)
         record_injection_ended(
             tmp_path, injection_id=injection_id,
             ended_at=f"2026-11-20T{hour}:01:00+00:00", ended_by="injector",
@@ -61,45 +68,75 @@ def test_no_records_file_reads_as_no_events(tmp_path):
     assert read_injection_events(tmp_path) == []
 
 
-def test_claiming_twice_is_refused_while_the_first_owner_is_alive(tmp_path):
-    claim_active_fault(tmp_path, injection_id="first", fault_id="lock_wait.long_transaction",
-                       process_id=os.getpid())
+def test_has_ended_is_per_injection(tmp_path):
+    finished_id = record_one_injection(tmp_path, hour=10)
+    record_injection_ended(tmp_path, injection_id=finished_id,
+                           ended_at="2026-11-20T10:01:00+00:00", ended_by="injector")
+    open_id = record_one_injection(tmp_path, hour=11)
 
-    with pytest.raises(ActiveFaultError, match="lock_wait.long_transaction"):
-        claim_active_fault(tmp_path, injection_id="second",
-                           fault_id="missing_index.dropped_index", process_id=os.getpid())
-
-    assert read_active_fault(tmp_path)["injection_id"] == "first"
-
-
-def test_a_claim_left_by_a_dead_process_is_still_refused_and_reported_stale(tmp_path):
-    dead_process_id = 2 ** 22 + 12345  # above the default macOS and Linux pid range
-    claim_active_fault(tmp_path, injection_id="crashed", fault_id="lock_wait.long_transaction",
-                       process_id=dead_process_id)
-
-    # A crashed injector may have left the lab changed. Starting another fault
-    # on top would make the ground truth wrong, so "clear" must run first.
-    with pytest.raises(ActiveFaultError, match="clear"):
-        claim_active_fault(tmp_path, injection_id="next",
-                           fault_id="missing_index.dropped_index", process_id=os.getpid())
-
-    active_fault = read_active_fault(tmp_path)
-    assert active_fault["injection_id"] == "crashed"
-    assert active_fault["owner_alive"] is False
+    assert injection_has_ended(tmp_path, finished_id) is True
+    assert injection_has_ended(tmp_path, open_id) is False
 
 
-def test_release_allows_the_next_claim(tmp_path):
-    claim_active_fault(tmp_path, injection_id="first", fault_id="lock_wait.long_transaction",
-                       process_id=os.getpid())
-    release_active_fault(tmp_path)
+def test_lock_is_exclusive_until_released(tmp_path):
+    first_lock = try_acquire_injector_lock(tmp_path)
 
-    assert read_active_fault(tmp_path) is None
-    claim_active_fault(tmp_path, injection_id="second", fault_id="lock_wait.long_transaction",
-                       process_id=os.getpid())
-    assert read_active_fault(tmp_path)["injection_id"] == "second"
+    assert first_lock is not None
+    assert try_acquire_injector_lock(tmp_path) is None
+
+    release_injector_lock(first_lock)
+    second_lock = try_acquire_injector_lock(tmp_path)
+    assert second_lock is not None
+    release_injector_lock(second_lock)
 
 
-def test_release_without_a_claim_is_harmless(tmp_path):
-    release_active_fault(tmp_path)
+def _hold_lock_until_killed(state_directory, lock_is_held):
+    held_lock = try_acquire_injector_lock(state_directory)
+    assert held_lock is not None
+    lock_is_held.set()
+    while True:
+        time.sleep(1)
 
-    assert read_active_fault(tmp_path) is None
+
+def test_lock_held_by_another_process_is_released_when_that_process_is_killed(tmp_path):
+    context = multiprocessing.get_context("spawn")
+    lock_is_held = context.Event()
+    holder = context.Process(target=_hold_lock_until_killed, args=(tmp_path, lock_is_held))
+    holder.start()
+    try:
+        assert lock_is_held.wait(timeout=20)
+        assert try_acquire_injector_lock(tmp_path) is None  # really held elsewhere
+    finally:
+        holder.kill()  # SIGKILL: the holder gets no chance to clean up
+        holder.join(timeout=10)
+
+    lock_after_kill = try_acquire_injector_lock(tmp_path)
+    assert lock_after_kill is not None
+    release_injector_lock(lock_after_kill)
+
+
+def test_claim_round_trip_and_removal(tmp_path):
+    tmp_path.mkdir(exist_ok=True)
+    assert read_claim(tmp_path) is None
+
+    write_claim(tmp_path, injection_id="abc", fault_id="lock_wait.long_transaction",
+                process_id=4242)
+
+    assert read_claim(tmp_path) == {
+        "injection_id": "abc", "fault_id": "lock_wait.long_transaction", "process_id": 4242,
+    }
+    assert not list(tmp_path.glob("*.writing"))  # the temporary file was renamed away
+    remove_claim(tmp_path)
+    assert read_claim(tmp_path) is None
+    remove_claim(tmp_path)  # removing twice is harmless
+
+
+def test_unreadable_claim_is_reported_not_raised(tmp_path):
+    # A writer that died mid-write must not make "clear" and "status" crash.
+    for broken_content in ("", "{not json", "[1, 2]"):
+        (tmp_path / "active_fault.json").write_text(broken_content)
+
+        claim = read_claim(tmp_path)
+
+        assert claim["injection_id"] is None
+        assert "unreadable" in claim["fault_id"]

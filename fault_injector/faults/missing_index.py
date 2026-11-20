@@ -15,6 +15,7 @@ class DroppedIndex(Fault):
     root_cause = "missing_index_slow_query"
     summary = "Drop the (customer_id, created_at) index on orders."
     dropped_index_name = "idx_orders_customer_created"
+    planned_changes = ("drop index idx_orders_customer_created on shop.orders",)
 
     def start(self, lab_access):
         definition = next(
@@ -23,7 +24,6 @@ class DroppedIndex(Fault):
         )
         with lab_access.control_connection.cursor() as cursor:
             cursor.execute(drop_index_sql(definition))
-        return [f"dropped index {definition.name} on shop.{definition.table}"]
 
     def stop(self, lab_access):
         # The index is recreated by the baseline restore that follows every fault.

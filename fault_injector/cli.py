@@ -5,12 +5,15 @@ import signal
 import sys
 import threading
 
-from fault_injector.engine import clear_lab, describe_lab_state, injected_fault
+import pymysql
+
+from fault_injector.engine import ClearError, clear_lab, describe_lab_state, injected_fault
 from fault_injector.lab import LabSettingsError, NotLabEnvironmentError
 from fault_injector.records import ActiveFaultError
 from fault_injector.registry import find_fault, list_faults
 
 EXIT_REFUSED = 2
+EXIT_LAB_UNREACHABLE = 3
 
 
 def build_parser():
@@ -59,12 +62,12 @@ def run_clear(arguments):
 
 def run_status(arguments):
     state = describe_lab_state()
-    active_fault = state["active_fault"]
-    if active_fault is None:
+    claim = state["claim"]
+    if claim is None:
         print("active fault: none")
     else:
-        owner = "running" if active_fault["owner_alive"] else "process gone, run clear"
-        print(f"active fault: {active_fault['fault_id']} ({owner})")
+        owner = "running" if state["injector_running"] else "injector gone, run clear"
+        print(f"active fault: {claim['fault_id']} ({owner})")
     print(f"missing baseline indexes: {', '.join(state['missing_indexes']) or 'none'}")
     print(f"unexpected indexes: {', '.join(state['unexpected_indexes']) or 'none'}")
     return 0
@@ -81,9 +84,13 @@ def main(argument_list=None):
     handlers = {"inject": run_inject, "clear": run_clear, "status": run_status, "list": run_list}
     try:
         return handlers[arguments.command](arguments)
-    except (ActiveFaultError, NotLabEnvironmentError, LabSettingsError) as refusal:
+    except (ActiveFaultError, NotLabEnvironmentError, LabSettingsError, ClearError) as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return EXIT_REFUSED
+    except pymysql.err.OperationalError as connection_error:
+        # For example "too many connections" while a connection fault is active.
+        print(f"cannot reach the lab MySQL: {connection_error.args[1]}", file=sys.stderr)
+        return EXIT_LAB_UNREACHABLE
     except KeyError as unknown_fault:
         print(f"refused: {unknown_fault.args[0]}", file=sys.stderr)
         return EXIT_REFUSED
