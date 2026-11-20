@@ -16,6 +16,7 @@ services:
       DIAG_DB_PASSWORD: ${DIAG_DB_PASSWORD:?Copy .env.example to .env first}
       EXPORTER_DB_PASSWORD: ${EXPORTER_DB_PASSWORD:?Copy .env.example to .env first}
       GATE_DB_PASSWORD: ${GATE_DB_PASSWORD:?Copy .env.example to .env first}
+      FAULT_DB_PASSWORD: ${FAULT_DB_PASSWORD:?Copy .env.example to .env first}
     volumes:
       - ./lab/mysql/conf.d:/etc/mysql/conf.d:ro
       - ./lab/mysql/init:/docker-entrypoint-initdb.d:ro

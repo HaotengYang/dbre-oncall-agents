@@ -41,6 +41,7 @@ def connect_as(lab_env):
         "shop_app": "APP_DB_PASSWORD",
         "shop_diag": "DIAG_DB_PASSWORD",
         "shop_gate": "GATE_DB_PASSWORD",
+        "shop_fault": "FAULT_DB_PASSWORD",
         "root": "MYSQL_ROOT_PASSWORD",
     }
     open_connections = []
