@@ -30,7 +30,8 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 
 ### A. Fault injector
 
-- [ ] A1. Proposal and completion criteria (no code)
+- [x] A1. Proposal and completion criteria (no code):
+      `docs/proposals/A-fault-injector.md`, awaiting owner confirmation
 - [ ] A2. Missing-index slow query: one variant, inject and clear
 - [ ] A3. Lock wait: one variant
 - [ ] A4. Connection exhaustion: one variant; ask the owner how the diagnosis
