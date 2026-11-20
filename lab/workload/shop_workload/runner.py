@@ -21,7 +21,18 @@ from shop_workload.settings import load_settings
 
 RECONNECT_DELAY_SECONDS = 1.0
 CONNECT_TIMEOUT_SECONDS = 5
-STATEMENT_TIMEOUT_SECONDS = 30
+
+# The server must give up on a lock before the client gives up on the server.
+# If the client timed out first it would drop the socket and reconnect while
+# the server session stayed blocked on the lock, leaking one session per
+# worker per timeout until max_connections was reached. Measured before this
+# fix: a 100 s table lock grew sessions from 6 to 18.
+SERVER_LOCK_WAIT_TIMEOUT_SECONDS = 10
+CLIENT_SOCKET_TIMEOUT_SECONDS = 30
+SESSION_SETUP_SQL = (
+    f"SET SESSION innodb_lock_wait_timeout = {SERVER_LOCK_WAIT_TIMEOUT_SECONDS}, "
+    f"lock_wait_timeout = {SERVER_LOCK_WAIT_TIMEOUT_SECONDS}"
+)
 
 OPERATIONS_TOTAL = Counter(
     "workload_operations_total",
@@ -51,8 +62,9 @@ def open_connection(settings):
         database=settings.mysql_database,
         autocommit=True,
         connect_timeout=CONNECT_TIMEOUT_SECONDS,
-        read_timeout=STATEMENT_TIMEOUT_SECONDS,
-        write_timeout=STATEMENT_TIMEOUT_SECONDS,
+        read_timeout=CLIENT_SOCKET_TIMEOUT_SECONDS,
+        write_timeout=CLIENT_SOCKET_TIMEOUT_SECONDS,
+        init_command=SESSION_SETUP_SQL,
     )
 
 

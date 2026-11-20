@@ -80,3 +80,38 @@ def test_baseline_workload_latency_is_low(prometheus_query):
     )
 
     assert slowest_p99_seconds < 0.1
+
+
+def test_table_lock_does_not_pile_up_workload_sessions(prometheus_query, connect_as):
+    """A lock on a busy table must not turn into connection growth by itself.
+
+    Before the workload set server-side lock timeouts, each worker timed out
+    client-side, reconnected, and left its old session blocked on the server:
+    sessions grew by four every 30 seconds for as long as the lock was held.
+    """
+    root_connection = connect_as("root")
+    observer_connection = connect_as("shop_diag")
+    count_sessions = "SELECT COUNT(*) FROM performance_schema.processlist WHERE USER = 'shop_app'"
+    sessions_before = fetch_value(observer_connection, count_sessions)
+    failures_before = single_value(prometheus_query(FAILED_OPERATIONS))
+    lock_held_seconds = 45
+
+    peak_sessions = sessions_before
+    with root_connection.cursor() as cursor:
+        cursor.execute("LOCK TABLES shop.orders WRITE")
+    try:
+        lock_released_at = time.monotonic() + lock_held_seconds
+        while time.monotonic() < lock_released_at:
+            time.sleep(3)
+            peak_sessions = max(peak_sessions, fetch_value(observer_connection, count_sessions))
+    finally:
+        with root_connection.cursor() as cursor:
+            cursor.execute("UNLOCK TABLES")
+
+    # One extra is tolerated: a worker can be mid-reconnect when sampled.
+    assert peak_sessions <= sessions_before + 1
+    # The lock was real and the workload felt it: blocked operations failed
+    # and were counted, rather than hanging unseen.
+    time.sleep(8)
+    assert single_value(prometheus_query(FAILED_OPERATIONS)) - failures_before >= 4
+    assert fetch_value(observer_connection, count_sessions) == sessions_before
