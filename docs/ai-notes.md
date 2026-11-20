@@ -17,9 +17,22 @@ used and what it achieved.
 - 2026-11-19: The first commit landed on `chore/project-rules`, leaving no
   `main`. The owner had the branch renamed to `main` (a rename, no commit
   changed) and set the workflow: one branch per module, plain merge, no squash.
+- 2026-11-19: Design review. Claude's draft used keyword-only runbook
+  retrieval and argued a vector index was unjustified. The owner changed it:
+  retrieval becomes an interface with both implementations, runbooks grow to
+  about ten, and the evals measure both on wording-mismatch queries. Lesson:
+  where a trade-off can be measured cheaply, measure it instead of asserting.
+- 2026-11-19: Design review. The owner required a plain-language rationale next
+  to the root-cause label, and required end-to-end and replay numbers to be
+  reported separately so a replay score is never read as a whole-chain score.
+- 2026-11-19: The commit author name was set without a space ("HaotengYang").
+  The owner had it corrected to "Haoteng Yang" on the four local commits before
+  the first push, with original timestamps kept. Nothing pushed was rewritten.
 
 ## Suggestions from Claude that the owner accepted
 
+- 2026-11-19: Record evidence once per case and replay it to every model, so
+  model comparison is fair, repeatable and affordable.
 - 2026-11-19: A separate "Rules learned from owner feedback" section at the end
   of `CLAUDE.md`, so rules added during development stay distinguishable from
   the initial ones.

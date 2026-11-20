@@ -6,11 +6,13 @@ Updated at the end of every working session.
 
 - 2026-11-19: Repository created; project rules recorded in `CLAUDE.md`.
 - 2026-11-19: `docs/DESIGN.md` drafted (architecture, module responsibilities,
-  trade-offs, non-goals). Awaiting owner review.
+  trade-offs, non-goals).
+- 2026-11-19: Private GitHub repository created; `main` and `docs/design` pushed.
+- 2026-11-19: `docs/DESIGN.md` revised after owner review (revision 2).
 
 ## In progress
 
-- Owner review of `docs/DESIGN.md`.
+- Owner re-review of `docs/DESIGN.md`, then merge `docs/design` into `main`.
 
 ## Remaining (in build order)
 
@@ -21,10 +23,9 @@ Updated at the end of every working session.
 5. Change safety gate
 6. `README.md` and `AI_WORKFLOW.md`
 
-Also remaining: `.claude/agents/` (explorer, implementer, reviewer) and the
-`verify` skill in `.claude/skills/`.
+Next after the merge: `.claude/agents/` (explorer, implementer, reviewer) and the
+`verify` skill in `.claude/skills/`; then the lab environment proposal.
 
 ## Open decisions
 
-- Commit author name and email to be confirmed by the owner before first push.
 - See "Open questions for the owner" in `docs/DESIGN.md`.
