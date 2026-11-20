@@ -50,6 +50,12 @@ used and what it achieved.
   proposals and added two corrections: `undetermined` on a healthy case is a
   mild false alarm and is counted separately; and the digest table holds
   normalized text, so `EXPLAIN` must use the stored sample statement.
+- 2026-11-20: Pacing. Claude built the whole lab module in one round of over
+  an hour and 14 commits, with a long report. The owner could not follow it
+  and changed the way of working: one planned step at a time, stop after each,
+  reports of at most 15 lines, split anything over 40 minutes, and ask before
+  installing software. Recorded as rules in `CLAUDE.md`. Lesson: work the owner
+  cannot follow is work the owner cannot defend in an interview.
 
 ## Suggestions from Claude that the owner accepted
 
