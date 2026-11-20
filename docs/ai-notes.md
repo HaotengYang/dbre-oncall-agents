@@ -46,12 +46,16 @@ used and what it achieved.
     "Proposed by" column that separates Claude's ideas from the owner's.
   Lesson: a design that names a tool ("EXPLAIN", "slow log", "shadow table")
   without stating its limits and required privileges is not finished.
+- 2026-11-19: Design review closed. The owner approved Claude's four pending
+  proposals and added two corrections: `undetermined` on a healthy case is a
+  mild false alarm and is counted separately; and the digest table holds
+  normalized text, so `EXPLAIN` must use the stored sample statement.
 
 ## Suggestions from Claude that the owner accepted
 
 - 2026-11-19: Record evidence once per case and replay it to every model, so
   model comparison is fair, repeatable and affordable.
-- 2026-11-19: (pending owner review) Statement digests in `performance_schema`
+- 2026-11-19: (approved at close of design review) Statement digests in `performance_schema`
   as the slow-query source; an eval case with hostile text inside a captured
   statement; a redundant-index check and a short lock wait timeout in the gate.
 - 2026-11-19: A separate "Rules learned from owner feedback" section at the end
@@ -60,6 +64,14 @@ used and what it achieved.
 
 ## Techniques used
 
+- 2026-11-19: **Independent second opinion on the design.** During design
+  review the owner used a separate Claude session (chat interface, no access
+  to this repository or this conversation) to review `docs/DESIGN.md`. The
+  comments on eval difficulty, `EXPLAIN` safety and the safety gate's risk
+  assessment, among others, came from that review; the owner decided which to
+  adopt and passed them to Claude Code as change requests. Why: the session
+  that wrote a design is the worst placed to find its gaps. Effect: six gaps
+  found before any code existed.
 - 2026-11-19: **Stop on incomplete instructions.** The owner's message was cut
   off mid-step; Claude completed the steps that were clear and asked about the
   rest instead of guessing. Effect: no work had to be thrown away.

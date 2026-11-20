@@ -13,9 +13,12 @@ Updated at the end of every working session.
   rules, EXPLAIN safety, slow-query source and least privilege, sampled shadow
   rehearsal and risk checks, two verification levels, "Proposed by" column.
 
+- 2026-11-19: Design review closed; `docs/DESIGN.md` approved and frozen.
+
 ## In progress
 
-- Owner re-review of `docs/DESIGN.md`, then merge `docs/design` into `main`.
+- Subagent definitions in `.claude/agents/`.
+- Lab environment proposal (awaiting owner confirmation).
 
 ## Remaining (in build order)
 
