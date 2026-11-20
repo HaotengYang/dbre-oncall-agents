@@ -36,7 +36,9 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 - [ ] A3. Lock wait: one variant
 - [ ] A4. Connection exhaustion: one variant; ask the owner how the diagnosis
       account should connect when connections are exhausted
-- [ ] A5. Several variants per class, plus cascading faults
+- [ ] A5. Several variants per class, plus cascading faults. The missing-index
+      class must include a variant that does not change the schema: a new query
+      on a column that never had an index (owner, 2026-11-20)
 
 ### B. Eval system
 
@@ -48,7 +50,8 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 
 ### C. Agents
 
-- [ ] C1. Evidence collectors (read-only)
+- [ ] C1. Evidence collectors (read-only). Add the test that diagnosis-side
+      code never reads injection records or imports `fault_injector`
 - [ ] C2. SQL agent and metrics agent, in two parallel worktrees
 - [ ] C3. Orchestrator and diagnosis report
 - [ ] C4. Connect the LLM; owner approves model list and budget first; then

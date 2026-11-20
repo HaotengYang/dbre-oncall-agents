@@ -141,3 +141,13 @@ The owner could not follow it.
 5. Ask the owner before installing any software on the owner's computer.
 
 If the schedule slips, tell the owner. The owner decides what to cut.
+
+### 2026-11-20: ground truth is isolated from diagnosis
+
+The fault injector knows the answer; the diagnosis side must never see it.
+Diagnosis-side code (evidence collectors, every agent, the orchestrator) must
+not read `var/injections.jsonl` or the fault injector's baseline index
+definitions, and must not import anything from the `fault_injector` package.
+Only the eval runner reads injection records, and only to score. A test
+enforces this once the agents exist.
+
