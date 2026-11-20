@@ -171,3 +171,14 @@ def test_failed_restore_keeps_the_claim_so_the_next_inject_is_refused(
     assert DROPPED_INDEX_NAME in orders_index_names(diag_connection)
     assert records.read_claim(tmp_path) is None
     assert records.read_injection_events(tmp_path)[-1]["ended_by"] == "clear"
+
+
+def test_a_stale_stop_request_does_not_stop_the_next_injection(connect_as, tmp_path):
+    diag_connection = connect_as("shop_diag")
+    records.request_stop(tmp_path)  # left behind by a clear that was killed
+
+    with engine.injected_fault("missing_index.dropped_index", state_directory=tmp_path):
+        # The injection withdrew the old request when it started, so an
+        # injector polling for requests would keep running.
+        assert not records.stop_was_requested(tmp_path)
+        assert DROPPED_INDEX_NAME not in orders_index_names(diag_connection)

@@ -1,4 +1,7 @@
-"""The injector must stop promptly on Ctrl-C however the signal lands.
+"""The injector must stop promptly on Ctrl-C at any point of its wait loop.
+
+Signals are sent after the fault is reported active; signals during fault
+start are not covered here.
 
 An earlier version set a threading.Event from the signal handler while the
 main thread polled Event.wait(); when the signal arrived at the wrong moment

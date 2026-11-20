@@ -90,11 +90,16 @@ def read_injection_events(state_directory):
     return [json.loads(line) for line in records_path.read_text().splitlines() if line.strip()]
 
 
+def injection_ended_by(state_directory, injection_id):
+    """Returns who closed the injection ("injector" or "clear"), or None if open."""
+    for event in read_injection_events(state_directory):
+        if event["event"] == "ended" and event["injection_id"] == injection_id:
+            return event["ended_by"]
+    return None
+
+
 def injection_has_ended(state_directory, injection_id):
-    return any(
-        event["event"] == "ended" and event["injection_id"] == injection_id
-        for event in read_injection_events(state_directory)
-    )
+    return injection_ended_by(state_directory, injection_id) is not None
 
 
 def try_acquire_injector_lock(state_directory, holder_role):

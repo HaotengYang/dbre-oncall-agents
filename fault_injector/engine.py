@@ -172,10 +172,12 @@ def _wait_for_lock_holder(state_directory):
     if holder is not None and holder["process_id"] == os.getpid():
         raise ClearError("clear was called from inside the running injection")
 
-    records.request_stop(state_directory)
     try:
         deadline = time.monotonic() + STOP_WAIT_SECONDS
         while time.monotonic() < deadline:
+            # Rewritten on every pass: an injector that starts while clear is
+            # waiting withdraws old requests, and must still be told to stop.
+            records.request_stop(state_directory)
             injector_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_CLEAR)
             if injector_lock is not None:
                 return injector_lock
@@ -205,12 +207,15 @@ def clear_lab(settings=None, state_directory=None):
     if injector_lock is None:
         claim_while_held = records.read_claim(state_directory)
         injector_lock = _wait_for_lock_holder(state_directory)
-        # Report a stopped injector only on evidence: there was a claim while
-        # the lock was held, and that injection has since closed itself.
+        # Say an injector stopped only on evidence: there was a claim while
+        # the lock was held, and that injection was then closed by its own
+        # injector (not by another clear). Whether it stopped because of this
+        # request or by itself in the same moment cannot be told apart.
         if (
             claim_while_held is not None
             and claim_while_held.get("injection_id")
-            and records.injection_has_ended(state_directory, claim_while_held["injection_id"])
+            and records.injection_ended_by(state_directory, claim_while_held["injection_id"])
+            == "injector"
         ):
             actions.append(f"stopped running injector for {claim_while_held['fault_id']}")
     try:

@@ -117,7 +117,8 @@ def test_clear_waits_its_turn_behind_another_clear(tmp_path, spawn, restore_call
     assert restore_calls == ["restore"]
 
 
-def test_stop_request_left_for_an_earlier_injector_is_withdrawn(tmp_path):
+def test_stop_request_can_be_written_and_withdrawn_repeatedly(tmp_path):
+    records.request_stop(tmp_path)
     records.request_stop(tmp_path)
     assert records.stop_was_requested(tmp_path)
 
@@ -125,6 +126,66 @@ def test_stop_request_left_for_an_earlier_injector_is_withdrawn(tmp_path):
 
     assert not records.stop_was_requested(tmp_path)
     records.withdraw_stop_request(tmp_path)  # withdrawing twice is harmless
+
+
+def _hold_lock_and_withdraw_the_first_request_like_a_starting_injector(
+    state_directory, lock_is_held
+):
+    held_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_INJECTOR)
+    assert held_lock is not None
+    lock_is_held.set()
+    give_up_at = time.monotonic() + CHILD_LIFETIME_LIMIT_SECONDS
+    # A starting injector deletes whatever request it finds, once.
+    while time.monotonic() < give_up_at and not records.stop_was_requested(state_directory):
+        time.sleep(0.01)
+    records.withdraw_stop_request(state_directory)
+    # After that it polls like a running injector.
+    while time.monotonic() < give_up_at and not records.stop_was_requested(state_directory):
+        time.sleep(0.05)
+    records.release_injector_lock(held_lock)
+
+
+def test_request_withdrawn_by_a_starting_injector_is_sent_again(tmp_path, spawn, restore_calls):
+    lock_is_held = spawn.event()
+    injector = spawn(
+        _hold_lock_and_withdraw_the_first_request_like_a_starting_injector,
+        tmp_path, lock_is_held,
+    )
+    assert lock_is_held.wait(timeout=20)
+    waiting_started_at = time.monotonic()
+
+    engine.clear_lab(state_directory=tmp_path)
+
+    # With a request written only once, clear would wait the full
+    # STOP_WAIT_SECONDS (60) and then fail.
+    assert time.monotonic() - waiting_started_at < 10
+    injector.join(timeout=10)
+    assert injector.exitcode == 0
+    assert restore_calls == ["restore"]
+
+
+def test_clear_does_not_claim_to_have_stopped_an_injector_closed_by_another_clear(
+    tmp_path, spawn, restore_calls
+):
+    # A crashed injector's claim and open record; another clear holds the lock
+    # and closes that record, as it would in real use.
+    injection_id = records.new_injection_id()
+    records.record_injection_started(
+        tmp_path, injection_id=injection_id, fault_id="lock_wait.long_transaction",
+        root_cause="lock_wait", started_at="2026-11-20T09:00:00.000+00:00", changes=[],
+    )
+    records.write_claim(tmp_path, injection_id, "lock_wait.long_transaction", 4242)
+    lock_is_held = spawn.event()
+    spawn(_hold_lock_briefly, tmp_path, lock_is_held, 1.0)
+    assert lock_is_held.wait(timeout=20)
+    records.record_injection_ended(
+        tmp_path, injection_id=injection_id,
+        ended_at="2026-11-20T09:05:00.000+00:00", ended_by="clear",
+    )
+
+    actions = engine.clear_lab(state_directory=tmp_path)
+
+    assert not any("stopped running injector" in action for action in actions)
 
 
 def test_the_package_never_sends_a_signal():
@@ -136,7 +197,13 @@ def test_the_package_never_sends_a_signal():
         f"{source_path.name}:{line_number}"
         for source_path in package_directory.rglob("*.py")
         for line_number, line in enumerate(source_path.read_text().splitlines(), start=1)
-        if "os.kill" in line or "send_signal" in line or ".terminate()" in line
+        if any(
+            forbidden in line
+            for forbidden in (
+                "os.kill", "import kill", "killpg", "send_signal", ".terminate(", ".kill(",
+                "pthread_kill", "raise_signal", "subprocess", "os.fork",
+            )
+        )
     ]
 
     assert offending_lines == []
