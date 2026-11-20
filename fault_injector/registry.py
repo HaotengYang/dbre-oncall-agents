@@ -1,11 +1,12 @@
 """The faults the injector knows."""
 
+from fault_injector.faults.lock_wait import LongTransaction
 from fault_injector.faults.missing_index import DroppedIndex
 
 # The labels a diagnosis can be scored against (docs/DESIGN.md, section 3).
 ROOT_CAUSE_LABELS = {"missing_index_slow_query", "lock_wait", "connection_exhaustion"}
 
-_FAULT_CLASSES = (DroppedIndex,)
+_FAULT_CLASSES = (DroppedIndex, LongTransaction)
 
 
 def list_faults():
