@@ -1,0 +1,15 @@
+# A 5 s scrape interval lets the diagnosis system place the onset of a fault
+# to within a few seconds.
+global:
+  scrape_interval: 5s
+  scrape_timeout: 4s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: mysql
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]
+
+  - job_name: workload
+    static_configs:
+      - targets: ["workload:8000"]
