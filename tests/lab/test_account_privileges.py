@@ -58,9 +58,14 @@ def test_diag_can_read_statement_digests_with_sample_text(connect_as):
         connection,
         "SELECT DIGEST_TEXT, QUERY_SAMPLE_TEXT, COUNT_STAR "
         "FROM performance_schema.events_statements_summary_by_digest "
-        "WHERE SCHEMA_NAME = 'shop' AND DIGEST_TEXT = %s",
+        "WHERE SCHEMA_NAME = 'shop' AND DIGEST_TEXT = %s AND COUNT_STAR > 0",
         (WORKLOAD_ORDER_BY_ID_DIGEST,),
     )
+    # COUNT_STAR > 0: once, about 20 s after a fresh server start, this table
+    # held a second row with the same digest text, COUNT_STAR 0 and no sample.
+    # It was gone seconds later and did not reappear in 1,400 polls. The cause
+    # is not established. Collectors must ignore zero-count rows.
+
     # Exactly the workload's order_by_id statement. Other digests on orders
     # exist too (these tests run their own queries), so the filter is specific.
     assert len(rows) == 1, rows
