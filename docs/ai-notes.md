@@ -28,11 +28,32 @@ used and what it achieved.
 - 2026-11-19: The commit author name was set without a space ("HaotengYang").
   The owner had it corrected to "Haoteng Yang" on the four local commits before
   the first push, with original timestamps kept. Nothing pushed was rewritten.
+- 2026-11-19: Second design review. The owner found six gaps in Claude's
+  design, each a place where the draft was plausible but unsafe or unmeasurable:
+  - The three fault classes are too easy to tell apart, so rule engine and LLM
+    could both score 100% and the comparison would mean nothing. Added a hard
+    tier (cascading faults, healthy-but-looks-faulty, incomplete evidence).
+  - The draft said "run EXPLAIN" without limits. `EXPLAIN ANALYZE` executes the
+    statement. Now: plain EXPLAIN, SELECT only, single statement, timeout; and
+    captured SQL is untrusted input to prompts.
+  - The draft said "read the slow query log" although a read-only account
+    cannot read a log file. The source and the minimum grants are now explicit.
+  - The shadow-table rehearsal could itself overload the database. Now a capped
+    sample, with the limit stated: sample timing does not predict full-table
+    timing.
+  - Running the full verify before every commit was impractical. Now two levels.
+  - The decisions log credited every decision to the owner. It now has a
+    "Proposed by" column that separates Claude's ideas from the owner's.
+  Lesson: a design that names a tool ("EXPLAIN", "slow log", "shadow table")
+  without stating its limits and required privileges is not finished.
 
 ## Suggestions from Claude that the owner accepted
 
 - 2026-11-19: Record evidence once per case and replay it to every model, so
   model comparison is fair, repeatable and affordable.
+- 2026-11-19: (pending owner review) Statement digests in `performance_schema`
+  as the slow-query source; an eval case with hostile text inside a captured
+  statement; a redundant-index check and a short lock wait timeout in the gate.
 - 2026-11-19: A separate "Rules learned from owner feedback" section at the end
   of `CLAUDE.md`, so rules added during development stay distinguishable from
   the initial ones.

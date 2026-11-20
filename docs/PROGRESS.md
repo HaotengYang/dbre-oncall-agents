@@ -9,6 +9,9 @@ Updated at the end of every working session.
   trade-offs, non-goals).
 - 2026-11-19: Private GitHub repository created; `main` and `docs/design` pushed.
 - 2026-11-19: `docs/DESIGN.md` revised after owner review (revision 2).
+- 2026-11-19: `docs/DESIGN.md` revision 3: hard eval tier and ground-truth
+  rules, EXPLAIN safety, slow-query source and least privilege, sampled shadow
+  rehearsal and risk checks, two verification levels, "Proposed by" column.
 
 ## In progress
 
