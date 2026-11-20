@@ -21,15 +21,18 @@ help:
 	@echo "No .env file. Run: cp .env.example .env   and set the passwords." >&2
 	@exit 1
 
+START_LAB := $(COMPOSE) up --detach --build --wait --wait-timeout $(STARTUP_TIMEOUT_SECONDS)
+START_FAILED_HINT := echo "Lab did not become healthy. If the first start failed part-way, the data volume is incomplete: run 'make reset'." >&2; exit 1
+
 up: .env
-	$(COMPOSE) up --detach --build --wait --wait-timeout $(STARTUP_TIMEOUT_SECONDS)
+	$(START_LAB) || { $(START_FAILED_HINT); }
 
 down:
 	$(COMPOSE) down
 
 reset: .env
 	$(COMPOSE) down --volumes
-	$(COMPOSE) up --detach --build --wait --wait-timeout $(STARTUP_TIMEOUT_SECONDS)
+	$(START_LAB) || { $(START_FAILED_HINT); }
 
 ps:
 	$(COMPOSE) ps

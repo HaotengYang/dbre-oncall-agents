@@ -27,9 +27,13 @@ services:
     cpus: "1.0"
     mem_limit: 1g
     healthcheck:
-      # During first-start initialisation the server listens on a socket only,
-      # so this TCP check stays unhealthy until schema, seed and accounts exist.
-      test: ["CMD", "mysqladmin", "ping", "--host=127.0.0.1", "--silent"]
+      # Healthy means: every init script finished (the marker is written by
+      # the last one) and the server accepts TCP connections. Without the
+      # marker, a volume left by a failed first start would pass the ping and
+      # be reported healthy with no accounts in it.
+      test:
+        - CMD-SHELL
+        - test -f /var/lib/mysql/lab-init-complete && mysqladmin ping --host=127.0.0.1 --silent
       interval: 3s
       timeout: 3s
       retries: 60

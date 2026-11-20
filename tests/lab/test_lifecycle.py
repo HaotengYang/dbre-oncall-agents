@@ -71,3 +71,43 @@ def test_stop_and_start_keeps_data_and_reset_restores_the_seed(connect_as):
     ) == 0
     assert fetch_value(after_reset, "SELECT COUNT(*) FROM shop.orders") == 200_000
     assert fetch_value(after_reset, "SELECT COUNT(*) FROM shop.order_items") == 400_000
+
+
+def run_make_expecting_failure(target_name, environment_overrides=None):
+    import os
+
+    completed = subprocess.run(
+        ["make", target_name],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **(environment_overrides or {})},
+    )
+    assert completed.returncode != 0, "make %s unexpectedly succeeded" % target_name
+    return completed.stderr
+
+
+def test_failed_first_start_is_never_reported_healthy(connect_as):
+    """A first start that fails part-way leaves an incomplete data volume.
+    The next "make up" must fail and say how to recover, not report success."""
+    subprocess.run(
+        ["docker", "compose", "down", "--volumes"],
+        cwd=REPOSITORY_ROOT, check=True, capture_output=True,
+    )
+    try:
+        # "!" is outside the allowed password alphabet, so account creation
+        # refuses to run after the schema and seed have already been written.
+        run_make_expecting_failure("up", {"APP_DB_PASSWORD": "invalid!password"})
+
+        # Second attempt with the correct .env: the volume now exists, so the
+        # image skips initialisation and the accounts are still missing.
+        error_output = run_make_expecting_failure("up")
+
+        assert "make reset" in error_output
+        assert healthy_service_count() == 0
+    finally:
+        run_make("reset")
+
+    assert healthy_service_count() == 4
+    gate_connection = connect_as("shop_gate")
+    assert fetch_value(gate_connection, "SELECT COUNT(*) FROM shop.orders") == 200_000

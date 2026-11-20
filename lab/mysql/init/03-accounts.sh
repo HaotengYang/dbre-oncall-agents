@@ -35,7 +35,13 @@ if [ "$lab_accounts_ready" != yes ]; then
 fi
 unset lab_accounts_ready
 
-mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+# Written only after every init step has succeeded. The container health
+# check requires it, so a data volume left behind by a failed first start can
+# never be reported as healthy. It lives in the data volume, so it is removed
+# together with the data by "make reset".
+lab_init_marker=/var/lib/mysql/lab-init-complete
+
+if mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
 CREATE DATABASE shop_shadow;
 
 CREATE USER 'shop_app'@'%' IDENTIFIED BY '${APP_DB_PASSWORD}';
@@ -59,3 +65,10 @@ CREATE USER 'shop_gate'@'%' IDENTIFIED BY '${GATE_DB_PASSWORD}';
 GRANT SELECT, INDEX ON shop.* TO 'shop_gate'@'%';
 GRANT CREATE, DROP, ALTER, INDEX, SELECT, INSERT ON shop_shadow.* TO 'shop_gate'@'%';
 SQL
+then
+  touch "$lab_init_marker"
+  unset lab_init_marker
+else
+  echo "lab accounts: creating accounts failed" >&2
+  return 1 2>/dev/null || exit 1
+fi
