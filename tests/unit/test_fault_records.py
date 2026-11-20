@@ -3,9 +3,12 @@ what keeps two faults from overlapping; both are pinned here."""
 
 import json
 import multiprocessing
+import os
 import time
 
 from fault_injector.records import (
+    ROLE_INJECTOR,
+    read_lock_holder,
     injection_has_ended,
     new_injection_id,
     read_claim,
@@ -79,19 +82,22 @@ def test_has_ended_is_per_injection(tmp_path):
 
 
 def test_lock_is_exclusive_until_released(tmp_path):
-    first_lock = try_acquire_injector_lock(tmp_path)
+    assert read_lock_holder(tmp_path) is None
+    first_lock = try_acquire_injector_lock(tmp_path, ROLE_INJECTOR)
 
     assert first_lock is not None
-    assert try_acquire_injector_lock(tmp_path) is None
+    assert try_acquire_injector_lock(tmp_path, ROLE_INJECTOR) is None
+    assert read_lock_holder(tmp_path) == {"role": "injector", "process_id": os.getpid()}
 
     release_injector_lock(first_lock)
-    second_lock = try_acquire_injector_lock(tmp_path)
+    assert read_lock_holder(tmp_path) is None  # identity is wiped on release
+    second_lock = try_acquire_injector_lock(tmp_path, ROLE_INJECTOR)
     assert second_lock is not None
     release_injector_lock(second_lock)
 
 
 def _hold_lock_until_killed(state_directory, lock_is_held):
-    held_lock = try_acquire_injector_lock(state_directory)
+    held_lock = try_acquire_injector_lock(state_directory, ROLE_INJECTOR)
     assert held_lock is not None
     lock_is_held.set()
     while True:
@@ -105,12 +111,12 @@ def test_lock_held_by_another_process_is_released_when_that_process_is_killed(tm
     holder.start()
     try:
         assert lock_is_held.wait(timeout=20)
-        assert try_acquire_injector_lock(tmp_path) is None  # really held elsewhere
+        assert try_acquire_injector_lock(tmp_path, ROLE_INJECTOR) is None  # really held elsewhere
     finally:
         holder.kill()  # SIGKILL: the holder gets no chance to clean up
         holder.join(timeout=10)
 
-    lock_after_kill = try_acquire_injector_lock(tmp_path)
+    lock_after_kill = try_acquire_injector_lock(tmp_path, ROLE_INJECTOR)
     assert lock_after_kill is not None
     release_injector_lock(lock_after_kill)
 

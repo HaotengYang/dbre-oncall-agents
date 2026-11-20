@@ -3,17 +3,19 @@
 import argparse
 import signal
 import sys
-import threading
+import time
 
 import pymysql
 
 from fault_injector.engine import ClearError, clear_lab, describe_lab_state, injected_fault
 from fault_injector.lab import LabSettingsError, NotLabEnvironmentError
+from fault_injector import records
 from fault_injector.records import ActiveFaultError
 from fault_injector.registry import find_fault, list_faults
 
 EXIT_REFUSED = 2
 EXIT_LAB_UNREACHABLE = 3
+STOP_POLL_SECONDS = 0.2
 
 
 def build_parser():
@@ -36,18 +38,42 @@ def build_parser():
     return parser
 
 
+class StopFlag:
+    """Set from a signal handler, read by the wait loop.
+
+    A plain attribute on purpose. threading.Event must not be set from a
+    signal handler while the main thread is inside Event.wait(): both take the
+    event's internal lock, and the handler runs on the main thread, so the
+    process deadlocks. That happened here once the wait became a polling loop.
+    """
+
+    def __init__(self):
+        self.is_set = False
+
+    def set(self, signal_number=None, frame=None):
+        self.is_set = True
+
+
 def run_inject(arguments):
     find_fault(arguments.fault_id)  # fail on an unknown id before touching the lab
-    stop_requested = threading.Event()
+    stop_flag = StopFlag()
     for stop_signal in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(stop_signal, lambda signal_number, frame: stop_requested.set())
+        signal.signal(stop_signal, stop_flag.set)
 
     with injected_fault(arguments.fault_id) as injection:
         print(f"injected {injection['fault_id']} at {injection['started_at']}", flush=True)
         for change in injection["changes"]:
             print(f"  {change}", flush=True)
         print("fault is active; press Ctrl-C to stop and restore", flush=True)
-        stop_requested.wait(arguments.duration)
+        # Stops on Ctrl-C, on --duration, or when "clear" in another terminal
+        # leaves a stop request.
+        stop_at = None if arguments.duration is None else time.monotonic() + arguments.duration
+        while not stop_flag.is_set:
+            if records.stop_was_requested(records.DEFAULT_STATE_DIRECTORY):
+                break
+            if stop_at is not None and time.monotonic() >= stop_at:
+                break
+            time.sleep(STOP_POLL_SECONDS)  # a signal interrupts the sleep
     print("fault stopped, baseline restored", flush=True)
     return 0
 

@@ -8,6 +8,20 @@ Whether an injector is running is decided by an operating-system file lock,
 not by a process id. The lock disappears with the process that holds it, even
 after SIGKILL, and it cannot be mistaken for an unrelated process that later
 got the same id.
+
+Nothing in this package ever sends a signal to another process. "clear" stops
+a running injector by writing a stop request file, which the injector polls.
+A request that reaches no injector does nothing; a signal sent to a process id
+read from a file can hit an unrelated process, and three review rounds kept
+finding ways for that to happen. The role and process id that a holder writes
+into the lock file are for messages only and are never acted on.
+
+Known limits:
+- The lock is scoped to this state directory, not to the lab MySQL. Two
+  checkouts (for example two git worktrees) pointed at the same lab do not
+  exclude each other.
+- The lock belongs to the open file, which a fork() child would share. Nothing
+  here forks while holding it; code that does must not outlive the injector.
 """
 
 import contextlib
@@ -21,6 +35,11 @@ DEFAULT_STATE_DIRECTORY = pathlib.Path(__file__).resolve().parents[1] / "var"
 RECORDS_FILE_NAME = "injections.jsonl"
 ACTIVE_FAULT_FILE_NAME = "active_fault.json"
 LOCK_FILE_NAME = "injector.lock"
+STOP_REQUEST_FILE_NAME = "stop_requested"
+
+ROLE_INJECTOR = "injector"
+ROLE_CLEAR = "clear"
+ROLE_STATUS = "status"
 
 
 class ActiveFaultError(Exception):
@@ -78,12 +97,13 @@ def injection_has_ended(state_directory, injection_id):
     )
 
 
-def try_acquire_injector_lock(state_directory):
+def try_acquire_injector_lock(state_directory, holder_role):
     """Takes the exclusive injector lock without waiting.
 
     Returns an open file object that holds the lock, or None if another
     process (or another holder in this process) has it. Closing the file, or
-    the death of the process, releases the lock.
+    the death of the process, releases the lock. The holder's role and process
+    id are written into the lock file for read_lock_holder().
     """
     state_directory.mkdir(parents=True, exist_ok=True)
     lock_file = open(state_directory / LOCK_FILE_NAME, "a+", encoding="utf-8")
@@ -92,13 +112,39 @@ def try_acquire_injector_lock(state_directory):
     except BlockingIOError:
         lock_file.close()
         return None
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(json.dumps({"role": holder_role, "process_id": os.getpid()}))
+    lock_file.flush()
     return lock_file
 
 
 def release_injector_lock(lock_file):
+    with contextlib.suppress(OSError, ValueError):
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.flush()
     with contextlib.suppress(OSError):
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
     lock_file.close()
+
+
+def read_lock_holder(state_directory):
+    """Returns {"role", "process_id"} as written by the current lock holder.
+
+    Returns None when the file is empty or unreadable. The content can be
+    stale: a holder that was killed never wipes it, and a new holder has not
+    yet overwritten it in the instant after taking the lock. Use it for
+    messages only; never act on it.
+    """
+    lock_path = state_directory / LOCK_FILE_NAME
+    try:
+        holder = json.loads(lock_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(holder, dict) or "role" not in holder or "process_id" not in holder:
+        return None
+    return holder
 
 
 def read_claim(state_directory):
@@ -132,3 +178,18 @@ def write_claim(state_directory, injection_id, fault_id, process_id):
 
 def remove_claim(state_directory):
     (state_directory / ACTIVE_FAULT_FILE_NAME).unlink(missing_ok=True)
+
+
+def request_stop(state_directory):
+    """Asks a running injector to stop. It polls for this file."""
+    state_directory.mkdir(parents=True, exist_ok=True)
+    (state_directory / STOP_REQUEST_FILE_NAME).write_text("stop\n")
+
+
+def stop_was_requested(state_directory):
+    return (state_directory / STOP_REQUEST_FILE_NAME).exists()
+
+
+def withdraw_stop_request(state_directory):
+    (state_directory / STOP_REQUEST_FILE_NAME).unlink(missing_ok=True)
+

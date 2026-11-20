@@ -3,7 +3,6 @@
 import contextlib
 import datetime
 import os
-import signal
 import time
 
 import pymysql
@@ -109,7 +108,7 @@ def injected_fault(fault_id, settings=None, state_directory=None):
     state_directory = state_directory or records.DEFAULT_STATE_DIRECTORY
     fault = find_fault(fault_id)
 
-    injector_lock = records.try_acquire_injector_lock(state_directory)
+    injector_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_INJECTOR)
     if injector_lock is None:
         running = records.read_claim(state_directory) or {}
         raise records.ActiveFaultError(
@@ -124,6 +123,8 @@ def injected_fault(fault_id, settings=None, state_directory=None):
                 "is gone. Run: python -m fault_injector clear"
             )
 
+        # A request addressed to an earlier injector must not stop this one.
+        records.withdraw_stop_request(state_directory)
         control_connection = open_guarded_control_connection(settings)
         lab_access = LabAccess(settings, control_connection)
         injection_id = records.new_injection_id()
@@ -155,33 +156,36 @@ def injected_fault(fault_id, settings=None, state_directory=None):
         records.release_injector_lock(injector_lock)
 
 
-def _stop_running_injector(state_directory):
-    """Asks the running injector to stop and waits for its lock.
+def _wait_for_lock_holder(state_directory):
+    """Asks a running injector to stop and waits for the injector lock.
 
-    Returns the lock once this process holds it. The claim's process id is
-    trusted only because the injector lock is currently held: the claim was
-    written by the process holding that lock, and a held lock means that
-    process is still alive, so the id cannot have been reused.
+    Writes a stop request, which a command-line injector polls for, and waits
+    until this process can take the lock. No signal is sent to anyone. If the
+    holder is another "clear" or a "status" probe, the request is ignored by
+    them and this simply waits its turn.
+
+    An injection running through the Python API (the eval runner) does not
+    poll; it ends when its with-block ends. If that takes longer than the
+    wait, this raises and nothing is cleared.
     """
-    claim = records.read_claim(state_directory) or {}
-    process_id = claim.get("process_id")
-    if process_id == os.getpid():
+    holder = records.read_lock_holder(state_directory)
+    if holder is not None and holder["process_id"] == os.getpid():
         raise ClearError("clear was called from inside the running injection")
-    if process_id is not None:
-        try:
-            os.kill(process_id, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass  # it exited between the lock check and the signal
 
-    deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        injector_lock = records.try_acquire_injector_lock(state_directory)
-        if injector_lock is not None:
-            return injector_lock
-        time.sleep(0.2)
+    records.request_stop(state_directory)
+    try:
+        deadline = time.monotonic() + STOP_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            injector_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_CLEAR)
+            if injector_lock is not None:
+                return injector_lock
+            time.sleep(0.2)
+    finally:
+        # Never leave a request behind: it would stop the next injection.
+        records.withdraw_stop_request(state_directory)
     raise ClearError(
-        f"the running injector ({claim.get('fault_id', 'unknown fault')}) did not stop "
-        f"within {STOP_WAIT_SECONDS} s. Nothing was cleared."
+        f"the injector lock was still held after {STOP_WAIT_SECONDS} s. Nothing was cleared. "
+        "If a fault is running in another terminal, stop it there with Ctrl-C."
     )
 
 
@@ -197,11 +201,18 @@ def clear_lab(settings=None, state_directory=None):
     state_directory = state_directory or records.DEFAULT_STATE_DIRECTORY
     actions = []
 
-    injector_lock = records.try_acquire_injector_lock(state_directory)
+    injector_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_CLEAR)
     if injector_lock is None:
-        stopped_fault_id = (records.read_claim(state_directory) or {}).get("fault_id", "unknown")
-        injector_lock = _stop_running_injector(state_directory)
-        actions.append(f"stopped running injector for {stopped_fault_id}")
+        claim_while_held = records.read_claim(state_directory)
+        injector_lock = _wait_for_lock_holder(state_directory)
+        # Report a stopped injector only on evidence: there was a claim while
+        # the lock was held, and that injection has since closed itself.
+        if (
+            claim_while_held is not None
+            and claim_while_held.get("injection_id")
+            and records.injection_has_ended(state_directory, claim_while_held["injection_id"])
+        ):
+            actions.append(f"stopped running injector for {claim_while_held['fault_id']}")
     try:
         for restored_name in restore_baseline_on_fresh_connection(settings):
             actions.append(f"recreated index {restored_name}")
@@ -229,7 +240,7 @@ def describe_lab_state(settings=None, state_directory=None):
     state_directory = state_directory or records.DEFAULT_STATE_DIRECTORY
 
     claim = records.read_claim(state_directory)
-    probe_lock = records.try_acquire_injector_lock(state_directory)
+    probe_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_STATUS)
     injector_running = probe_lock is None
     if probe_lock is not None:
         records.release_injector_lock(probe_lock)

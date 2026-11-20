@@ -19,7 +19,7 @@ def orders_index_names(connection):
 
 
 def lock_is_free(state_directory):
-    probe_lock = records.try_acquire_injector_lock(state_directory)
+    probe_lock = records.try_acquire_injector_lock(state_directory, records.ROLE_STATUS)
     if probe_lock is None:
         return False
     records.release_injector_lock(probe_lock)
@@ -139,3 +139,35 @@ def test_unreadable_claim_does_not_stop_clear(tmp_path):
 
     assert any("leftover claim" in action for action in actions)
     assert records.read_claim(tmp_path) is None
+
+
+def test_failed_restore_keeps_the_claim_so_the_next_inject_is_refused(
+    connect_as, tmp_path, monkeypatch
+):
+    diag_connection = connect_as("shop_diag")
+    real_restore = engine.restore_baseline_on_fresh_connection
+
+    def restore_that_cannot_connect(settings):
+        raise ConnectionError("database went away during cleanup")
+
+    monkeypatch.setattr(engine, "restore_baseline_on_fresh_connection", restore_that_cannot_connect)
+    with pytest.raises(ConnectionError):
+        with engine.injected_fault("missing_index.dropped_index", state_directory=tmp_path):
+            pass
+
+    # The lab is still changed, and everything says so: the claim stays, no
+    # "ended" record claims the fault is over, and a new fault is refused.
+    assert DROPPED_INDEX_NAME not in orders_index_names(diag_connection)
+    assert records.read_claim(tmp_path) is not None
+    assert [e["event"] for e in records.read_injection_events(tmp_path)] == ["started"]
+    assert lock_is_free(tmp_path)
+    with pytest.raises(records.ActiveFaultError, match="clear"):
+        with engine.injected_fault("lock_wait.long_transaction", state_directory=tmp_path):
+            pass
+
+    monkeypatch.setattr(engine, "restore_baseline_on_fresh_connection", real_restore)
+    engine.clear_lab(state_directory=tmp_path)
+
+    assert DROPPED_INDEX_NAME in orders_index_names(diag_connection)
+    assert records.read_claim(tmp_path) is None
+    assert records.read_injection_events(tmp_path)[-1]["ended_by"] == "clear"
