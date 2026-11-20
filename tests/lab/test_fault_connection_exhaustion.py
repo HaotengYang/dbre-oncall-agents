@@ -1,6 +1,8 @@
 """Completion criteria 13 and 14: the idle-flood fault really uses up the
 server's connections, and stopping it really frees them."""
 
+import time
+
 import pymysql
 import pytest
 
@@ -45,17 +47,26 @@ def test_idle_flood_exhausts_connections_and_stop_frees_them(connect_as, lab_env
             )
         # A session that was already connected keeps working.
         assert fetch_value(diag_connection, "SELECT COUNT(*) FROM shop.products") == 1_000
+
+        # Criterion 14: within 10 s of "clear" connections are back under 10.
+        # The clock starts before clear is requested.
+        clear_requested_at = time.monotonic()
+        cleared = run_injector("clear")
+        wait_until(lambda: fetch_value(diag_connection, ALL_SESSIONS) < 10,
+                   timeout_seconds=10, interval_seconds=0.5)
+        seconds_from_clear_to_freed = time.monotonic() - clear_requested_at
     finally:
-        stop_fault(injector)
+        if injector.poll() is None:
+            stop_fault(injector)
 
     assert refused.value.args[0] == TOO_MANY_CONNECTIONS
     assert sessions_during >= 0.9 * max_connections
     # The extra sessions are idle application connections, as the fault says.
     assert idle_app_sessions_during >= sessions_during - sessions_before - 2
 
-    seconds_until_freed = wait_until(
-        lambda: fetch_value(diag_connection, ALL_SESSIONS) < 10, timeout_seconds=10
-    )
-    assert seconds_until_freed <= 10
+    assert cleared.returncode == 0
+    assert "stopped running injector for connection_exhaustion.idle_flood" in cleared.stdout
+    assert injector.wait(timeout=10) == 0
+    assert seconds_from_clear_to_freed <= 10
     reconnected = connect_as("shop_app")
     assert fetch_value(reconnected, "SELECT 1") == 1

@@ -57,8 +57,17 @@ def test_long_transaction_blocks_updates_without_growing_connections(
             peak_sessions = max(peak_sessions, fetch_value(diag_connection, APP_SESSIONS))
             time.sleep(2)
         failed_updates_during = prometheus_query(FAILED_UPDATES)[0][1]
+
+        # Criterion 12: within 15 s of "clear" no lock waits remain. The clock
+        # starts before clear is requested, so a slow stop cannot hide.
+        clear_requested_at = time.monotonic()
+        cleared = run_injector("clear")
+        wait_until(lambda: fetch_value(diag_connection, LOCK_WAITS) == 0,
+                   timeout_seconds=15, interval_seconds=0.5)
+        seconds_from_clear_to_no_lock_waits = time.monotonic() - clear_requested_at
     finally:
-        stop_fault(injector)
+        if injector.poll() is None:
+            stop_fault(injector)
 
     assert seconds_until_blocked <= 20
     # Exactly one blocker: an idle application session holding about 50,000 row
@@ -72,9 +81,9 @@ def test_long_transaction_blocks_updates_without_growing_connections(
     # A lock wait, not a cascade: only the one holding session was added.
     assert peak_sessions <= sessions_before + 2
 
-    seconds_until_clear = wait_until(
-        lambda: fetch_value(diag_connection, LOCK_WAITS) == 0, timeout_seconds=15
-    )
-    assert seconds_until_clear <= 15
+    assert cleared.returncode == 0
+    assert "stopped running injector for lock_wait.long_transaction" in cleared.stdout
+    assert injector.wait(timeout=10) == 0  # the injector exited cleanly
+    assert seconds_from_clear_to_no_lock_waits <= 15
     assert fetch_value(diag_connection, "SELECT COUNT(*) FROM information_schema.INNODB_TRX "
                                         "WHERE trx_rows_locked >= 50000") == 0
