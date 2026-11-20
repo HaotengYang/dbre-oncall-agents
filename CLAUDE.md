@@ -66,8 +66,11 @@ agents -> change safety gate -> docs.
    - `implementer`: implementation.
    - `reviewer`: reviews from a fresh context; correctness and safety only.
      No drive-by refactoring, no style changes.
-2. A `verify` skill in `.claude/skills/`: start the environment, inject faults,
-   run the evals, print a report. Run it before every commit.
+2. Verification has two levels:
+   - **Fast, before every commit:** run the unit tests. No containers.
+   - **Full, before merging a branch into `main`:** run the `verify` skill in
+     `.claude/skills/`: start the environment, inject faults, run the evals,
+     print a report.
 3. Independent modules are developed in parallel with git worktrees (for
    example the SQL agent and the metrics agent).
 4. No third-party orchestration tools. Use only what Claude Code ships with.
