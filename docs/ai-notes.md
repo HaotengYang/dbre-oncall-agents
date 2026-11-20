@@ -78,3 +78,8 @@ used and what it achieved.
 - 2026-11-19: **Design document before code.** `docs/DESIGN.md` is written and
   reviewed before any module exists. Effect: trade-offs and non-goals are
   decided by the owner up front, not discovered in review.
+- 2026-11-19: **Subagents with restricted tools.** `explorer` and `reviewer`
+  are defined without edit tools, so "the reviewer does not refactor" is
+  enforced by what the agent can do, not only by what it is told. Why: an
+  instruction can be ignored; a missing tool cannot. Effect: to be recorded
+  after first use.
