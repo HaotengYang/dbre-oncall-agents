@@ -7,6 +7,12 @@ from fault_injector.faults.cascade import (
 )
 from fault_injector.faults.connection_exhaustion import GradualLeak, IdleFlood
 from fault_injector.faults.healthy import HEALTHY_LABEL, HighLoad, SlowReport
+from fault_injector.faults.holdout import (
+    ActiveSlowCalls,
+    ProductsRowLock,
+    SteadyIdlePool,
+    UnindexedUpdateBlocksWriters,
+)
 from fault_injector.faults.lock_wait import BlockedSchemaChange, LongTransaction
 from fault_injector.faults.missing_index import DroppedIndex, UnindexedQuery
 
@@ -27,6 +33,11 @@ _FAULT_CLASSES = (
     HighLoad,
     SlowReport,
     LockWaitWithHostileComment,
+    # Holdout scenarios (docs/proposals/holdout-cases.md).
+    ActiveSlowCalls,
+    UnindexedUpdateBlocksWriters,
+    ProductsRowLock,
+    SteadyIdlePool,
 )
 
 

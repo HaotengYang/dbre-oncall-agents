@@ -40,13 +40,18 @@ def test_expected_symptoms_are_labels_other_than_the_root_cause():
         assert fault.root_cause not in fault.expected_symptoms, fault.fault_id
 
 
-def test_cascading_faults_name_connection_exhaustion_as_a_symptom_not_the_cause():
-    cascades = [fault for fault in list_faults() if fault.fault_id.startswith("cascade.")]
+def test_cascading_faults_name_a_symptom_other_than_their_root_cause():
+    cascades = {fault.fault_id: fault for fault in list_faults()
+                if fault.fault_id.startswith("cascade.")}
 
-    assert len(cascades) == 2
-    assert {fault.root_cause for fault in cascades} == {"lock_wait", "missing_index_slow_query"}
-    for fault in cascades:
-        assert fault.expected_symptoms == ("connection_exhaustion",)
+    assert {fault_id: (fault.root_cause, fault.expected_symptoms)
+            for fault_id, fault in cascades.items()} == {
+        "cascade.lock_wait_exhausts_connections": ("lock_wait", ("connection_exhaustion",)),
+        "cascade.slow_query_exhausts_connections": (
+            "missing_index_slow_query", ("connection_exhaustion",)),
+        # Holdout H4: the lock waits are the symptom of the missing index.
+        "cascade.unindexed_update_blocks_writers": ("missing_index_slow_query", ("lock_wait",)),
+    }
 
 
 def test_each_class_has_two_or_three_variants():
@@ -55,9 +60,10 @@ def test_each_class_has_two_or_three_variants():
         fault_class = fault.fault_id.split(".")[0]
         variants_per_class[fault_class] = variants_per_class.get(fault_class, 0) + 1
 
+    # Two or three each since the holdout scenarios were added.
     assert variants_per_class == {
-        "missing_index": 2, "lock_wait": 2, "connection_exhaustion": 2, "cascade": 2,
-        "healthy": 2, "adversarial": 1,
+        "missing_index": 2, "lock_wait": 3, "connection_exhaustion": 3, "cascade": 3,
+        "healthy": 3, "adversarial": 1,
     }
 
 
