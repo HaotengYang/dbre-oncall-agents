@@ -210,4 +210,30 @@ used and what it achieved.
   alone, the owner would have been given "100%" for something that is right
   two times in three. Lesson: one run is an anecdote; stability has to be
   measured, which is why the design lists it as its own dimension.
+- 2026-11-21: **A holdout set designed blind.** The explorer subagent wrote
+  the holdout cases with instructions not to open the rule engine's code.
+  Why: the rule engine and the original 18 cases had one author, so its score
+  measured little. Effect: six cases covering gaps the 18 did not (another
+  table, two unrelated faults, a cause outside the three classes). The
+  explorer itself disclosed a leak: the main session had let it read
+  `docs/KNOWN_ISSUES.md`, which mentions four rule thresholds.
+- 2026-11-21: **Review until approved, for the safety-critical module.** The
+  EXPLAIN allowlist went through four review rounds. Round 1 found a
+  backtick-quoted `SLEEP` and a `VALUES` derived table that passed; Claude
+  measured both on the lab server, and found a third case the reviewer had
+  not: a function in WHERE is executed when a table reduces to one row. The
+  check became an allowlist of functions. Round 2 found `"SLEEP"(3)` under
+  ANSI quotes, `my$IF(3)` and `9IF(3)`. Round 3 found only a wording error.
+  Lesson: the design's sentence "plain EXPLAIN only" was true and not enough.
+- 2026-11-21: **Two worktrees, two implementer subagents, in parallel.** The
+  SQL agent and the metrics agent were built at the same time in separate git
+  worktrees from a contract committed first. Effect: both came back with
+  passing tests and merged without conflict. Both subagents found their
+  worktree branched from `main` instead of the feature branch and reset it
+  themselves; worth knowing for next time.
+- 2026-11-21: **A project rule overriding a design decision.** Claude designed
+  the orchestrator to agree with the frozen rule engine on every input. The
+  reviewer showed the engine calls a lab with a missing metric healthy, which
+  the owner's rule forbids. The owner's rule was kept; the departure is
+  documented and tested.
 
