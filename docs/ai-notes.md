@@ -130,4 +130,28 @@ used and what it achieved.
   idle MySQL about 5% of one CPU and 630 MiB; workload 20.0 operations/s,
   p99 9 to 14 ms; idle connections 5 of 60. Unindexed scan of `orders`
   (200,000 rows) about 30 ms against 0.5 ms through an index.
+- 2026-11-20: **Five review rounds on one module; the fix was to remove a
+  capability, not to patch it.** `clear` stopped a running injector by sending
+  SIGTERM to a process id read from a file. Rounds 1, 2 and 3 each found a
+  different way for that signal to reach the wrong process (reused pid, a
+  second `clear` holding the lock, stale identity in the lock file). After the
+  third, the signalling was removed: `clear` writes a stop request and the
+  injector polls for it. Round 4 found two fail-closed defects in the new
+  design; round 5 approved. Lesson: when review keeps finding new holes in the
+  same mechanism, the mechanism is wrong.
+- 2026-11-20: **A defect that only showed under test load.** The injector set
+  a `threading.Event` from its signal handler while the main thread polled
+  `Event.wait()`. A Ctrl-C at the wrong instant deadlocked the process, which
+  then held the injector lock for ten minutes and hung the test run. Found by
+  sampling the stuck process. The handler now sets a plain attribute, with a
+  lab test that sends repeated signals.
+- 2026-11-20: **Tests that could not fail.** The reviewer found assertions
+  that held whatever the code did: timing checks placed after a helper that
+  already enforced the same limit, and a clock started after the event it was
+  meant to time. Each was rewritten so that reverting the behaviour fails it.
+- 2026-11-20: Claude's proposal for the idle-flood fault said "about 55 of 60
+  connections", which contradicted its own criterion that a new connection is
+  refused. The reviewer caught it; the proposal was corrected.
+- 2026-11-20: The owner asked for steps A2, A3 and A4 in one go. It took far
+  longer than three 40-minute steps because of the review rounds above.
 

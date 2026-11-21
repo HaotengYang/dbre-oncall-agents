@@ -1,18 +1,23 @@
 # Creates the lab's four accounts. Run by the MySQL image's entrypoint during
 # first start, after the schema and seed scripts.
 #
-# The four accounts never share privileges:
+# The accounts never share privileges:
 #   shop_app       the synthetic workload: read and write rows in shop
 #   shop_diag      diagnosis agents: read-only, least privilege
 #   shop_exporter  metrics exporter: server status only
 #   shop_gate      change safety gate: add or drop an index in shop, and full
 #                  control of the separate shadow database, nothing else
+#   shop_fault     fault injector: add or drop an index in shop (to create and
+#                  undo schema faults) and read the lab marker, nothing else
+#
+# It also creates the lab marker, lab_meta.environment. The fault injector
+# refuses to act on any server that does not carry it.
 #
 # This file is kept non-executable so the entrypoint sources it. It must not
 # call "exit" or change shell options, or it would affect the entrypoint.
 
 lab_accounts_ready=yes
-for lab_password_name in APP_DB_PASSWORD DIAG_DB_PASSWORD EXPORTER_DB_PASSWORD GATE_DB_PASSWORD; do
+for lab_password_name in APP_DB_PASSWORD DIAG_DB_PASSWORD EXPORTER_DB_PASSWORD GATE_DB_PASSWORD FAULT_DB_PASSWORD; do
   lab_password_value="$(printenv "$lab_password_name" || true)"
   case "$lab_password_value" in
     "")
@@ -66,6 +71,15 @@ CREATE USER 'shop_gate'@'%' IDENTIFIED BY '${GATE_DB_PASSWORD}';
 -- one-character wildcard and would also match names such as "shopXshadow".
 GRANT SELECT, INDEX ON shop.* TO 'shop_gate'@'%';
 GRANT CREATE, DROP, ALTER, INDEX, SELECT, INSERT ON \`shop\\_shadow\`.* TO 'shop_gate'@'%';
+
+CREATE DATABASE lab_meta;
+CREATE TABLE lab_meta.environment (name VARCHAR(64) NOT NULL PRIMARY KEY);
+INSERT INTO lab_meta.environment (name) VALUES ('dbre-lab');
+
+-- No SELECT on shop: the injector's schema account cannot read or change rows.
+CREATE USER 'shop_fault'@'%' IDENTIFIED BY '${FAULT_DB_PASSWORD}';
+GRANT INDEX ON shop.* TO 'shop_fault'@'%';
+GRANT SELECT ON \`lab\\_meta\`.* TO 'shop_fault'@'%';
 SQL
 then
   touch "$lab_init_marker"

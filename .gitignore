@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Fault injector state and injection records (ground truth for the evals).
+var/
+
 # Python
 __pycache__/
 *.pyc

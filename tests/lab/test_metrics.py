@@ -72,10 +72,15 @@ def test_idle_baseline_is_healthy(prometheus_query, connect_as):
 
 
 def test_baseline_workload_latency_is_low(prometheus_query):
+    # Measure a window that starts inside this test. Fault tests that ran just
+    # before would otherwise still be inside the rate window and make a
+    # healthy lab look slow (seen: 0.167 s right after the injector tests).
+    quiet_window_seconds = 30
+    time.sleep(quiet_window_seconds + 10)
     slowest_p99_seconds = single_value(
         prometheus_query(
-            "max(histogram_quantile(0.99, "
-            "sum by (le, operation) (rate(workload_operation_duration_seconds_bucket[1m]))))"
+            "max(histogram_quantile(0.99, sum by (le, operation) "
+            f"(rate(workload_operation_duration_seconds_bucket[{quiet_window_seconds}s]))))"
         )
     )
 
