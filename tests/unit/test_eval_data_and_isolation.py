@@ -63,63 +63,140 @@ def test_quick_set_names_existing_cases_and_covers_both_tiers():
     assert any(case.kind == "cascade" for case in quick_cases)
 
 
-def test_committed_thresholds_load():
+def test_committed_thresholds_are_the_ones_the_owner_set():
     thresholds = load_thresholds(EVALS_DIRECTORY / "thresholds.json")
 
-    assert set(thresholds) == {"basic", "hard"}
+    assert thresholds == {
+        "full": {
+            "basic": {"min_hit_rate": 0.83, "max_false_positive_rate": 0.0},
+            "hard": {"min_hit_rate": 0.625, "max_false_positive_rate": 0.0},
+        },
+        "quick": {"max_false_positives": 0, "max_misses": 1},
+    }
+
+
+OWNER_THRESHOLDS = {
+    "full": {
+        "basic": {"min_hit_rate": 0.83, "max_false_positive_rate": 0.0},
+        "hard": {"min_hit_rate": 0.625, "max_false_positive_rate": 0.0},
+    },
+    "quick": {"max_false_positives": 0, "max_misses": 1},
+}
 
 
 def scored(case_id, tier, kind, expected, answer):
     case = next(c for c in ALL_CASES if c.kind == kind and c.tier == tier)
-    case = type(case)(**{**case.__dict__, "case_id": case_id, "expected_root_cause": expected})
+    case = type(case)(**{**case.__dict__, "case_id": case_id, "expected_root_cause": expected,
+                         "also_acceptable": ()})
     return CaseResult(case, answer, (), classify_outcome(case, answer), None, None, 1.0, None)
 
 
-def test_thresholds_flag_only_what_falls_short_and_null_checks_nothing():
-    results = [
-        scored("b1", "basic", "single_fault", "lock_wait", "lock_wait"),
-        scored("b2", "basic", "single_fault", "lock_wait", "healthy"),
-        scored("b3", "basic", "healthy", "healthy", "lock_wait"),
-    ]
-    unset = {tier: {"min_hit_rate": None, "max_false_positive_rate": None}
-             for tier in ("basic", "hard")}
-    strict = {"basic": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0},
-              "hard": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0}}
-    lenient = {"basic": {"min_hit_rate": 0.5, "max_false_positive_rate": 1.0},
-               "hard": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0}}
-
-    assert threshold_violations(results, unset) == []
-    violations = threshold_violations(results, strict)
-    # Basic: hit rate 1/2 under 90%, false positives 1/1 over 0%. Hard has no
-    # cases in this run, so it is not judged.
-    assert len(violations) == 2
-    assert "50.0% (1/2)" in violations[0] and "100.0% (1/1)" in violations[1]
-    assert threshold_violations(results, lenient) == []
+def basic_tier_results(hits, misses, false_positives=0):
+    results = [scored(f"hit{n}", "basic", "single_fault", "lock_wait", "lock_wait")
+               for n in range(hits)]
+    results += [scored(f"miss{n}", "basic", "single_fault", "lock_wait", "healthy")
+                for n in range(misses)]
+    results += [scored(f"fp{n}", "basic", "healthy", "healthy", "lock_wait")
+                for n in range(false_positives)]
+    return results
 
 
-def test_any_case_without_an_answer_fails_the_check_even_with_no_thresholds_set():
+def test_full_set_five_of_six_passes_and_four_of_six_fails():
+    assert threshold_violations(basic_tier_results(5, 1), OWNER_THRESHOLDS, "full") == []
+
+    violations = threshold_violations(basic_tier_results(4, 2), OWNER_THRESHOLDS, "full")
+
+    assert len(violations) == 1 and "66.7% (4/6)" in violations[0]
+
+
+def test_full_set_hard_tier_five_of_eight_passes_and_four_of_eight_fails():
+    def hard_results(hits, misses):
+        return (
+            [scored(f"h{n}", "hard", "cascade", "lock_wait", "lock_wait") for n in range(hits)]
+            + [scored(f"m{n}", "hard", "cascade", "lock_wait", "healthy") for n in range(misses)]
+        )
+
+    assert threshold_violations(hard_results(5, 3), OWNER_THRESHOLDS, "full") == []
+    assert len(threshold_violations(hard_results(4, 4), OWNER_THRESHOLDS, "full")) == 1
+
+
+def test_full_set_any_false_positive_fails():
+    violations = threshold_violations(basic_tier_results(6, 0, false_positives=1),
+                                      OWNER_THRESHOLDS, "full")
+
+    assert len(violations) == 1 and "false-positive rate" in violations[0]
+
+
+def test_quick_set_is_judged_by_counts_not_rates():
+    one_miss = basic_tier_results(2, 1)   # a hit rate of 67% would fail 0.83
+    two_misses = basic_tier_results(1, 2)
+    one_false_positive = basic_tier_results(3, 0, false_positives=1)
+
+    assert threshold_violations(one_miss, OWNER_THRESHOLDS, "quick") == []
+    quick_violations = threshold_violations(two_misses, OWNER_THRESHOLDS, "quick")
+    assert len(quick_violations) == 1 and "2 miss(es)" in quick_violations[0]
+    assert "miss0" in quick_violations[0] and "miss1" in quick_violations[0]
+    false_positive_violations = threshold_violations(one_false_positive, OWNER_THRESHOLDS, "quick")
+    assert len(false_positive_violations) == 1 and "fp0" in false_positive_violations[0]
+
+
+def test_acceptable_answers_are_not_misses_on_the_quick_set():
+    case = next(c for c in ALL_CASES if c.kind == "incomplete_evidence")
+    acceptable = [CaseResult(case, "undetermined", (), classify_outcome(case, "undetermined"),
+                             None, None, 1.0, None)] * 3
+
+    assert {r.outcome for r in acceptable} == {"acceptable"}
+    assert threshold_violations(acceptable, OWNER_THRESHOLDS, "quick") == []
+
+
+def test_invalid_cases_cannot_make_a_judged_run_pass():
+    def invalid(case_id):
+        case = next(c for c in ALL_CASES if c.kind == "single_fault")
+        case = type(case)(**{**case.__dict__, "case_id": case_id})
+        return CaseResult(case, "lock_wait", (), "invalid", None, None, 1.0,
+                          "injector recorded lock_wait, case expects healthy")
+
+    four_hits_two_invalid = basic_tier_results(4, 0) + [invalid("x1"), invalid("x2")]
+    all_invalid = [invalid(f"x{n}") for n in range(6)]
+
+    # 4/4 would pass "at least 5/6" if the invalid cases were merely dropped.
+    full_violations = threshold_violations(four_hits_two_invalid, OWNER_THRESHOLDS, "full")
+    assert len(full_violations) == 1 and "x1, x2" in full_violations[0]
+    # Six invalid cases have no false positive and no miss.
+    assert len(threshold_violations(all_invalid, OWNER_THRESHOLDS, "quick")) == 1
+    # Outside the judged sets nothing is judged.
+    assert threshold_violations(all_invalid, OWNER_THRESHOLDS, None) == []
+
+
+def test_a_single_case_or_custom_selection_is_not_judged_against_thresholds():
+    assert threshold_violations(basic_tier_results(0, 3, false_positives=2),
+                                OWNER_THRESHOLDS, None) == []
+
+
+def test_any_case_without_an_answer_fails_whatever_was_run():
     healthy_case = next(c for c in ALL_CASES if c.kind == "healthy")
     crashed = CaseResult(healthy_case, "(no answer)", (), "diagnosis_error", None, None, 0.1,
                          "RuntimeError: backend failed")
-    unset = {tier: {"min_hit_rate": None, "max_false_positive_rate": None}
-             for tier in ("basic", "hard")}
-    zero_false_positives = {tier: {"min_hit_rate": None, "max_false_positive_rate": 0.0}
-                            for tier in ("basic", "hard")}
 
     # A backend that crashes on a healthy case raised no false positive, and
     # must still not pass.
-    for thresholds in (unset, zero_false_positives):
-        violations = threshold_violations([crashed], thresholds)
+    for set_name in ("full", "quick", None):
+        violations = threshold_violations([crashed], OWNER_THRESHOLDS, set_name)
         assert len(violations) == 1 and "no answer" in violations[0]
 
 
 @pytest.mark.parametrize(
     "content",
-    ["{not json", '{"basic": {}}',
-     '{"basic": {"min_hit_rate": 2, "max_false_positive_rate": null}, '
-     '"hard": {"min_hit_rate": null, "max_false_positive_rate": null}}',
-     '{"basic": {"min_hit_rate": "high", "max_false_positive_rate": null}, '
-     '"hard": {"min_hit_rate": null, "max_false_positive_rate": null}}'],
+    ["{not json", '{"full": {}}',
+     json.dumps({"full": OWNER_THRESHOLDS["full"]}),
+     json.dumps({**OWNER_THRESHOLDS, "quick": {"max_false_positives": 0}}),
+     json.dumps({**OWNER_THRESHOLDS, "quick": {"max_false_positives": 0.5, "max_misses": 1}}),
+     json.dumps({"full": {"basic": {"min_hit_rate": 2, "max_false_positive_rate": None},
+                          "hard": OWNER_THRESHOLDS["full"]["hard"]},
+                 "quick": OWNER_THRESHOLDS["quick"]}),
+     json.dumps({"full": {"basic": {"min_hit_rate": "high", "max_false_positive_rate": None},
+                          "hard": OWNER_THRESHOLDS["full"]["hard"]},
+                 "quick": OWNER_THRESHOLDS["quick"]})],
 )
 def test_malformed_thresholds_are_rejected(tmp_path, content):
     thresholds_path = tmp_path / "thresholds.json"
@@ -143,10 +220,13 @@ FORBIDDEN_MODULES = ("fault_injector", "eval_runner", "evals")
 FORBIDDEN_SUBSTRINGS = ("fault_injector", "eval_runner", "injections", "active_fault")
 # Short names that must not appear as a whole path or module part.
 FORBIDDEN_PARTS = ("evals", "var", "reports")
-# Calls that import or run code, or that search the filesystem.
-FORBIDDEN_CALLS = ("__import__", "import_module", "exec", "eval", "compile", "run_module",
-                   "run_path", "spec_from_file_location", "system", "popen",
+# Calls that import or run code, or that search the filesystem, however they
+# are reached (bare name or attribute).
+FORBIDDEN_CALLS = ("__import__", "import_module", "run_module", "run_path", "exec", "eval",
+                   "spec_from_file_location", "system", "popen",
                    "rglob", "glob", "walk", "scandir", "listdir", "iterdir")
+# Only as a bare name: re.compile() is a regular expression, not the builtin.
+FORBIDDEN_BARE_CALLS = ("compile",)
 # Attributes that expose modules already loaded by someone else.
 FORBIDDEN_ATTRIBUTES = ("modules", "meta_path", "path_hooks")
 DIAGNOSIS_DIRECTORY = REPOSITORY_ROOT / "diagnosis"
@@ -176,6 +256,8 @@ def isolation_violations(source_text):
             called_name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
             if called_name in FORBIDDEN_CALLS:
                 violations.append(f"calls {called_name}()")
+            if isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_BARE_CALLS:
+                violations.append(f"calls {node.func.id}()")
         if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ATTRIBUTES:
             violations.append(f"uses .{node.attr}")
         if isinstance(node, ast.Constant) and id(node) not in docstrings:
@@ -207,6 +289,9 @@ def test_diagnosis_source_cannot_reach_the_answers(source_path):
         ("def f():\n    return __import__('fault_' + 'injector')", "calls __import__()"),
         ("def f(m):\n    return m.import_module('fault_injector.records')", "calls import_module()"),
         ("exec('import fault_injector')", "calls exec()"),
+        ("code = compile('import x', 'f', 'exec')", "calls compile()"),
+        ("__builtins__.exec('import fault_' + 'injector')", "calls exec()"),
+        ("__builtins__.eval('1')", "calls eval()"),
         ("path = ROOT / 'evals' / 'cases'", "'evals'"),
         ("path = ROOT / 'var' / 'reports'", "'var'"),
         ("path = 'var/injections.jsonl'", "'injections'"),
@@ -232,8 +317,9 @@ def test_the_isolation_scan_catches_each_kind_of_violation(offending_source, exp
 def test_the_isolation_scan_ignores_docstrings_and_ordinary_code():
     harmless = (
         '"""Must not read var/ or evals/ or import fault_injector."""\n'
-        "import time\n"
+        "import re, time\n"
         "label = 'healthy'\n"
+        "pattern = re.compile('SELECT|EXECUTE')\n"
         "def f():\n"
         '    """Not allowed: evals."""\n'
         "    return time.time()\n"

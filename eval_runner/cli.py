@@ -10,7 +10,12 @@ from eval_runner.cases import CaseError, load_cases
 from eval_runner.preflight import PreflightError, check_lab_accounts
 from eval_runner.report import REPORTS_DIRECTORY, format_report, save_report
 from eval_runner.runner import RunAborted, run_cases
-from eval_runner.thresholds import ThresholdError, load_thresholds, threshold_violations
+from eval_runner.thresholds import (
+    ThresholdError,
+    describe_what_was_checked,
+    load_thresholds,
+    threshold_violations,
+)
 
 EVALS_DIRECTORY = pathlib.Path(__file__).resolve().parents[1] / "evals"
 EXIT_BELOW_THRESHOLD = 1
@@ -61,14 +66,15 @@ def run_command(arguments):
         print(f"run aborted, lab not at baseline: {aborted_reason}", file=sys.stderr)
         return EXIT_ABORTED
 
-    violations = threshold_violations(results, thresholds)
+    judged_as = None if arguments.case is not None else arguments.set
+    violations = threshold_violations(results, thresholds, judged_as)
+    print()
+    print(describe_what_was_checked(thresholds, judged_as))
     if violations:
-        print("\nBELOW THRESHOLD")
+        print("BELOW THRESHOLD")
         for violation in violations:
             print(f"  {violation}")
         return EXIT_BELOW_THRESHOLD
-    if all(value is None for tier in thresholds.values() for value in tier.values()):
-        print("\nNo thresholds are set in evals/thresholds.json; nothing was checked.")
     return 0
 
 
