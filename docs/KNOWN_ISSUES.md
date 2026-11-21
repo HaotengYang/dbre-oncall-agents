@@ -144,3 +144,25 @@ review findings left after the allowed review rounds are recorded here.
 - **Fence near-misses.** Every spelling of "untrusted" and every run of angle
   brackets is removed from fenced text; other invented markers are not.
 
+## Model comparison (step C4), suspected findings left after two review rounds
+
+- **Phantom charges.** Any error not known to repeat (no network, a rate limit,
+  a local error before the request is sent) is charged to the ledger at the
+  call's worst case, about 0.34 USD for Opus. The ledger only ever overstates,
+  but a burst of such errors can use up the 40 USD cap without spending it.
+  There is no backoff. Entries marked `estimated` in `var/model_spend.json`
+  can be removed by hand after checking the provider's usage page.
+- **First call's worst case** assumes a 4,000-token prompt until one is measured.
+- **`UnprocessableEntityError` (422)** is not treated as a persistent error.
+- **Recording write errors** after the old recording is deleted are not wrapped
+  into a run abort.
+
+## Runbook retrieval (step C5)
+
+- **Keyword retrieval misses most rewordings**: 3 of 8 at rank 1 (6 of 8 in
+  the top 3) for alerts worded unlike the runbooks, against 8 of 8 for
+  matching wording. Vector retrieval was deferred by the owner.
+- **The retrieval queries were written by the same author as the runbooks.**
+  Three were reworded after review because they shared words with their
+  target; the rest may still be easier than real alerts.
+
