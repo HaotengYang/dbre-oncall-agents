@@ -119,3 +119,25 @@ review findings left after the allowed review rounds are recorded here.
   and by treating one idle transaction holding many row locks as strong
   evidence. Until then the basic-tier hit rate varies between 5/6 and 6/6.
 
+## Evidence collectors, agents and orchestrator (steps C1 to C3)
+
+- **The frozen rule engine reads a lab without `max_connections` as healthy.**
+  The rule engine cannot be changed (frozen). The orchestrator refuses
+  "healthy" in that case; the `rule_engine` eval backend does not.
+- **After a Prometheus restart, a healthy lab escalates as "undetermined".**
+  The one-minute trend is absent until two samples exist, the orchestrator
+  refuses "healthy" with a metric missing, and three rounds 5 s apart are too
+  short to outlast the gap. Accepted: "not climbing" cannot be claimed without
+  the trend.
+- **EXPLAIN refuses much ordinary SQL** (backticks, `JOIN ... ON (...)`, index
+  hints, `CAST`, any subquery). Those statements are reported "not explained".
+  What it cannot catch: a view with a slow definition, or a statement that is
+  merely expensive to plan; the 5 s timeout and session kill cover both.
+- **The SQL agent's `connection_path == "none"` check is not tested on its own**;
+  the collector never produces that path with sessions present.
+- **The CLI's handling of a missing setting is not tested.**
+- **Static isolation scan limits.** `run = exec; run(...)` or `getattr`
+  tricks are not caught. The scan is a tripwire, not a sandbox.
+- **Fence near-misses.** Every spelling of "untrusted" and every run of angle
+  brackets is removed from fenced text; other invented markers are not.
+

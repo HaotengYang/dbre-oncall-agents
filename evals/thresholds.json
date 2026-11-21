@@ -1,10 +1,16 @@
 {
-  "basic": {
-    "min_hit_rate": null,
-    "max_false_positive_rate": null
+  "full": {
+    "basic": {
+      "min_hit_rate": 1.0,
+      "max_false_positive_rate": 0.0
+    },
+    "hard": {
+      "min_hit_rate": 0.625,
+      "max_false_positive_rate": 0.0
+    }
   },
-  "hard": {
-    "min_hit_rate": null,
-    "max_false_positive_rate": null
+  "quick": {
+    "max_false_positives": 0,
+    "max_misses": 1
   }
 }

@@ -176,3 +176,28 @@ After a fault ends, poll until the lab is healthy again before continuing,
 with a timeout. Tests and the eval runner share one gate for this
 (`lab_health`). Do not use fixed waiting times.
 
+### 2026-11-21: thresholds
+
+Set by the owner in `evals/thresholds.json`.
+
+- Full set, by rate: basic tier hit rate 6/6 (raised from 5/6 on 2026-11-21
+  after step C1 made the lock-wait evidence stable: 24 of 24 in three runs),
+  hard tier at least 5/8, false positives 0 on both tiers.
+- Quick set, by count, because it is too small for a rate: no false positive,
+  at most one miss. Rate thresholds apply only to the full set.
+
+### 2026-11-21: the rule engine is frozen, and the holdout set is not tuned to
+
+Background: the rule engine scored high because its rules and the eval cases
+came from the same author. For the comparison between the rule engine and the
+model to mean anything:
+
+1. When step C1 is done, the rule engine (`diagnosis/rules.py`) is tagged in
+   git and frozen. A test pins its content.
+2. After that, the rules must not be changed in order to pass the holdout set.
+   Any change to the frozen rules needs the owner's explicit consent, and the
+   reason is recorded.
+3. The holdout cases are designed without sight of the rule engine's code.
+4. The report has a separate holdout section. The rule engine and the model
+   both run on it; neither is adjusted for it.
+

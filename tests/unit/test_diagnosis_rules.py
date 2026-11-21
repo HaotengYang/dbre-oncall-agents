@@ -22,6 +22,7 @@ QUIET_SESSIONS = SessionEvidence(
 )
 INDEXED_STATEMENT = StatementLoad(
     digest_text="SELECT ... FROM `orders` WHERE `id` = ?", sample_text="SELECT id FROM orders WHERE id = 7",
+    schema_name="shop", sample_truncated=False, explain=None,
     executions=30, executions_per_second=6.0, rows_examined_per_execution=1.0,
     rows_examined_per_second=6.0, no_index_used=False, average_latency_ms=0.5,
 )
@@ -29,12 +30,14 @@ CUSTOMER_SCAN = StatementLoad(
     digest_text="SELECT ... FROM `orders` WHERE `customer_id` = ? ORDER BY `created_at` DESC LIMIT ?",
     sample_text=("SELECT id, status, total_cents, created_at FROM orders "
                  "WHERE customer_id = 90 ORDER BY created_at DESC LIMIT 10"),
+    schema_name="shop", sample_truncated=False, explain=None,
     executions=25, executions_per_second=5.0, rows_examined_per_execution=200_000.0,
     rows_examined_per_second=1_000_000.0, no_index_used=True, average_latency_ms=30.0,
 )
 RARE_REPORT = StatementLoad(
     digest_text="SELECT `products` . `category` , COUNT ( * ) ...",
     sample_text="SELECT products.category, COUNT(*) FROM shop.order_items JOIN shop.products ...",
+    schema_name=None, sample_truncated=False, explain=None,
     executions=1, executions_per_second=0.2, rows_examined_per_execution=800_000.0,
     rows_examined_per_second=160_000.0, no_index_used=True, average_latency_ms=320.0,
 )
@@ -145,6 +148,7 @@ def test_full_because_of_scans_names_the_index_and_lists_exhaustion_as_symptom()
         sample_text=("SELECT order_items.order_id FROM shop.order_items WHERE "
                      "order_items.product_id = 411 AND order_items.quantity >= 2 "
                      "ORDER BY order_items.unit_price_cents DESC LIMIT 50"),
+        schema_name=None, sample_truncated=False, explain=None,
         executions=90, executions_per_second=18.0, rows_examined_per_execution=400_000.0,
         rows_examined_per_second=7_200_000.0, no_index_used=True, average_latency_ms=2500.0,
     )
@@ -280,3 +284,94 @@ def test_onset_is_none_when_the_series_ends_normal_or_is_empty():
 
     assert first_sustained_anomaly(recovered, lambda value: value > 9) is None
     assert first_sustained_anomaly([], lambda value: value > 9) is None
+
+
+# ---- the three parts of the decision ----------------------------------
+
+from diagnosis.explain import ExplainResult, PlanRow
+from diagnosis.rules import assess_metrics, assess_sql, combine
+
+
+def test_sql_assessment_names_a_lock_wait_without_looking_at_metrics():
+    blocked = sessions(total=6, idle=2, row_lock_waiters=3,
+                       blocking_transactions=((50_000, True),))
+
+    assessment = assess_sql(evidence(blocked, metrics=metrics(exporter_reaches_mysql=False)))
+
+    assert assessment.candidate == "lock_wait"
+    assert assessment.weak_signals == ()
+
+
+def test_leak_needs_both_sides_idle_sessions_and_a_climbing_count():
+    leaking = evidence(sessions(total=24, idle=23),
+                       metrics=metrics(connections_change_per_second=1.0))
+    idle_but_steady = evidence(sessions(total=24, idle=23))
+    climbing_but_few_idle = evidence(sessions(total=8, idle=7),
+                                     metrics=metrics(connections_change_per_second=1.0))
+
+    sql_side = assess_sql(leaking)
+    metrics_side = assess_metrics(leaking)
+
+    # Neither side can name the leak alone.
+    assert sql_side.candidate is None and sql_side.idle_sessions_elevated
+    assert metrics_side.connections_climbing
+    assert combine(sql_side, metrics_side, leaking).root_cause == "connection_exhaustion"
+    assert decide(idle_but_steady).root_cause == "undetermined"
+    assert decide(climbing_but_few_idle).root_cause == "undetermined"
+
+
+def test_decide_is_exactly_the_combination_of_the_two_assessments():
+    for case_evidence in (
+        evidence(),
+        evidence(statements=[CUSTOMER_SCAN]),
+        evidence(sessions(total=60, idle=57, running=1), path="admin", normal_error=1040,
+                 admin_tried=True),
+        evidence(sessions(total=8, idle=2, metadata_lock_waiters=5)),
+    ):
+        assert decide(case_evidence) == combine(
+            assess_sql(case_evidence), assess_metrics(case_evidence), case_evidence
+        )
+
+
+def test_explain_result_is_quoted_in_the_evidence_when_present():
+    full_scan = ExplainResult("explained", None, (PlanRow("orders", "ALL", None, 199_000, "Using filesort"),))
+    refused = ExplainResult("skipped", "contains a comment")
+    confirmed = StatementLoad(**{**CUSTOMER_SCAN.__dict__, "explain": full_scan})
+    unexplained = StatementLoad(**{**CUSTOMER_SCAN.__dict__, "explain": refused})
+
+    assert any("EXPLAIN confirms a full table scan" in fact
+               for fact in decide(evidence(statements=[confirmed])).evidence)
+    assert any("not explained: contains a comment" in fact
+               for fact in decide(evidence(statements=[unexplained])).evidence)
+    # What EXPLAIN says does not change the label.
+    assert decide(evidence(statements=[unexplained])).root_cause == "missing_index_slow_query"
+
+
+@pytest.mark.parametrize(
+    "plan, expected_note",
+    [
+        ((PlanRow("orders", "ALL", None, 199_000, None),), "EXPLAIN confirms a full table scan"),
+        ((PlanRow("orders", "index", "idx_x", 199_000, None),), "a scan of a whole index"),
+        ((PlanRow("orders", "ref", "idx_orders_customer_created", 20, None),),
+         "an index lookup now"),
+        ((PlanRow(None, None, None, None, "Impossible WHERE"),), "no table access to judge"),
+        ((), "no table access to judge"),
+        ((PlanRow("orders", "range", None, 5, None),), "no full table scan (access: range)"),
+    ],
+)
+def test_explain_note_says_only_what_the_plan_shows(plan, expected_note):
+    explained = StatementLoad(**{**CUSTOMER_SCAN.__dict__,
+                                 "explain": ExplainResult("explained", None, plan)})
+
+    facts = decide(evidence(statements=[explained])).evidence
+
+    assert any(expected_note in fact for fact in facts), facts
+    if "index lookup" not in expected_note:
+        assert not any("index lookup now" in fact for fact in facts)
+
+
+def test_missing_connection_trend_is_never_read_as_not_climbing():
+    no_trend = metrics(connections_change_per_second=None,
+                       missing=("connection trend over the last minute",))
+
+    assert decide(evidence(metrics=no_trend)).root_cause == "undetermined"

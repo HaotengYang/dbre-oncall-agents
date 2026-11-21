@@ -7,6 +7,7 @@ is wired to reality: a system that always says "healthy" must score no hits.
 
 from diagnosis.contract import CONNECTION_EXHAUSTION, HEALTHY, Diagnosis
 from diagnosis.engine import diagnose_with_rules
+from diagnosis.orchestrator import diagnose_with_orchestrator
 
 
 def always_healthy(alert_text, access):
@@ -22,6 +23,8 @@ def always_connection_exhaustion(alert_text, access):
 
 BACKENDS = {
     "rule_engine": diagnose_with_rules,
+    # The agents and up to three rounds. Same frozen rules, more looks.
+    "orchestrator": diagnose_with_orchestrator,
     "always_healthy": always_healthy,
     "always_connection_exhaustion": always_connection_exhaustion,
 }

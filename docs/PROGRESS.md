@@ -53,10 +53,12 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 
 ### C. Agents
 
-- [ ] C1. Evidence collectors (read-only). Add the test that diagnosis-side
-      code never reads injection records or imports `fault_injector`
-- [ ] C2. SQL agent and metrics agent, in two parallel worktrees
-- [ ] C3. Orchestrator and diagnosis report
+- [x] C1. Evidence collectors (read-only): safe EXPLAIN, windowed lock sampling.
+      Reviewed four rounds until approved. Rule engine frozen and tagged
+      `rule-engine-frozen-v1`. Isolation test in place
+- [x] C2. SQL agent and metrics agent, built in two parallel worktrees by
+      implementer subagents. Reviewed twice
+- [x] C3. Orchestrator, report and `python -m diagnosis` CLI. Reviewed twice
 - [ ] C4. Connect the LLM; owner approves model list and budget first; then
       multi-model comparison
 - [ ] C5. SOP retrieval: ten runbooks, keyword and vector, hit-rate comparison
@@ -316,3 +318,50 @@ evidence even with a single waiter.
    keeps in reserve. An earlier note in this file, and the reviewer, said from
    memory that it only allows the admin port; that was wrong. The no-admin
    tier is now modelled by `shop_diag_noadmin`, which lacks the privilege.
+
+## Steps C1 to C3 (2026-11-21)
+
+Tests: 527 unit. Proposals written and awaiting the owner:
+`docs/proposals/holdout-cases.md`, `docs/proposals/C4-models-and-budget.md`.
+
+### C1: what EXPLAIN really executes (measured on the lab's MySQL 8.0.40)
+
+| Statement given to plain EXPLAIN | Time |
+|---|---|
+| `SELECT * FROM (SELECT SLEEP(3) AS x) AS derived` | 3.0 s (executed) |
+| `SELECT * FROM (VALUES ROW(SLEEP(3))) AS d` | 3.0 s (executed) |
+| `SELECT * FROM orders, LATERAL (SELECT SLEEP(3) AS x) AS d` | 3.0 s (executed) |
+| `SELECT id FROM orders WHERE id = 1 AND SLEEP(3) = 0` | 3.0 s (executed) |
+| `SELECT id FROM orders WHERE id = (SELECT SLEEP(3))` | 0 s |
+| `EXPLAIN ANALYZE SELECT SLEEP(2)` | 2.0 s (executed) |
+
+The design said "plain EXPLAIN only, SELECT only". That is not enough. The
+check is now an allowlist of statement shape and functions. Review took four
+rounds; rounds 1 and 2 each found statements that got through.
+
+### C3: one deliberate departure from the baseline
+
+The orchestrator takes the frozen rule engine's verdict each round, except
+that it never accepts "healthy" while the metrics agent reports missing
+metrics or an unreachable exporter. The frozen engine calls a lab without a
+`max_connections` metric healthy, which the owner's rule forbids. For those
+inputs the orchestrator and the rule engine disagree, on purpose.
+
+### Open for the owner
+
+- Quick set: a healthy case answered "undetermined" counts as neither a miss
+  nor a false positive. Should it count as a miss?
+- Holdout cases: eight questions at the end of the proposal.
+- C4: model list, spending cap, API key.
+
+### Stability after C1 (2026-11-21)
+
+Basic tier, three consecutive runs of all eight cases with the rule engine:
+24 of 24 correct. `basic-long-transaction`, which had been right 6 times in
+9 before C1, was right 3 of 3. As the owner had ordered, the basic-tier
+threshold was then raised from 5/6 to 6/6.
+
+Orchestrator lab tests: 3 of 3 pass (lock wait in one round; locked out
+without the admin port escalates after three rounds with the exhaustion
+symptom; the CLI's JSON report on a healthy lab).
+
