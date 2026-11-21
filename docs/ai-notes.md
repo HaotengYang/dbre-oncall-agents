@@ -202,4 +202,12 @@ used and what it achieved.
 - 2026-11-21: The owner asked for an expected index on missing-index cases and
   for every rate to show its fraction. Both are in: "Index suggestion correct
   100.0% (4/4)" is a separate line that never changes a hit into a miss.
+- 2026-11-21: **`verify` earned its keep on its first run.** Two full baseline
+  runs had the rule engine at 6/6 on the basic tier. The first `verify` run
+  got 2/3 on the same cases. Repeating the differing case five times gave
+  hit, miss, hit, hit, miss. The engine reads one number at one instant, and
+  that number flickers. Had the baseline been reported from the two full runs
+  alone, the owner would have been given "100%" for something that is right
+  two times in three. Lesson: one run is an anecdote; stability has to be
+  measured, which is why the design lists it as its own dimension.
 

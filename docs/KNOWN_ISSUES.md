@@ -110,3 +110,12 @@ review findings left after the allowed review rounds are recorded here.
   normal port (measured). Kept, because diagnosis needs a way in; documented
   because it is more than the privilege's name suggests.
 
+## Rule engine
+
+- **`basic-long-transaction` is unstable: 6 hits in 9 runs.** The engine reads
+  the row-lock waiter count at one instant and needs two; during the fault the
+  count moves between 1 and 4. When it reads one, it answers `undetermined`.
+  Measured 2026-11-21. To be fixed in step C1 by sampling across the window
+  and by treating one idle transaction holding many row locks as strong
+  evidence. Until then the basic-tier hit rate varies between 5/6 and 6/6.
+
