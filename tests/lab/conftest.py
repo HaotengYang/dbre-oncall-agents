@@ -68,6 +68,22 @@ def connect_as(lab_env):
             pass
 
 
+@pytest.fixture
+def observer_connection(lab_env):
+    """A read-only connection through the administrative port.
+
+    It can be opened and keeps working while every normal connection slot is
+    taken, so tests can watch the server during connection-exhaustion faults.
+    """
+    connection = pymysql.connect(
+        host="127.0.0.1", port=int(lab_env.get("MYSQL_ADMIN_HOST_PORT", "13307")),
+        user="shop_diag", password=lab_env["DIAG_DB_PASSWORD"],
+        autocommit=True, connect_timeout=5, read_timeout=30,
+    )
+    yield connection
+    connection.close()
+
+
 def fetch_all(connection, sql, parameters=None):
     with connection.cursor() as cursor:
         cursor.execute(sql, parameters)

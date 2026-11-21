@@ -5,6 +5,7 @@ import pytest
 
 from tests.lab.conftest import fetch_all
 from tests.lab.fault_helpers import (
+    clear_and_wait_for_baseline,
     rows_examined_per_execution,
     run_injector,
     start_fault,
@@ -35,9 +36,9 @@ def explain_access(connection):
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 def test_dropped_index_turns_the_customer_query_into_a_full_scan(connect_as):

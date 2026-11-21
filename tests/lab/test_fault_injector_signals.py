@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from tests.lab.fault_helpers import run_injector, start_fault
+from tests.lab.fault_helpers import clear_and_wait_for_baseline, run_injector, start_fault
 
 pytestmark = pytest.mark.lab
 
@@ -23,9 +23,9 @@ STOP_LIMIT_SECONDS = 20
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 def test_injector_stops_on_repeated_signals_at_varied_moments():
