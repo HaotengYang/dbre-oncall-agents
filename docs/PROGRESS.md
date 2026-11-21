@@ -45,10 +45,11 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 ### B. Eval system
 
 - [x] B1. Proposal: `docs/proposals/B-evals.md`, awaiting owner confirmation
-- [ ] B2. Eval runner plus rule engine for one fault class; first report
-- [ ] B3. Rule engine covers all cases; baseline numbers; owner sets thresholds
-- [ ] B4. Evidence recording and replay
-- [ ] B5. `verify` skill
+- [x] B2. Eval runner plus rule engine; first report (2026-11-21)
+- [x] B3. All 18 cases; rule-engine baseline below; thresholds still empty,
+      waiting for the owner
+- [ ] B4. Evidence recording and replay (moved into step C4 by the owner)
+- [x] B5. `verify` skill (`.claude/skills/verify`, `scripts/verify.sh`)
 
 ### C. Agents
 
@@ -184,3 +185,107 @@ twice; round 2 approved. Leftover suspected findings are in
 - `orders` is still 200,000 rows. With the faults now measured, the missing
   index shows as rows examined (about 10 to 200,000) and a p99 of about 230 ms
   for the affected query, not as a query over one second.
+
+## Steps B2, B3 and B5 (2026-11-21)
+
+Tests: 244 unit. Reviewed twice (round 2 was the last allowed); its four real
+defects were fixed, its suspected findings are in `docs/KNOWN_ISSUES.md`.
+
+Deviations from the B1 proposal, for the owner's information:
+
+- Case files are JSON, not YAML. No YAML parser was installed and the rule is
+  to ask before installing software; JSON needs nothing. Same fields.
+- Code is in `eval_runner/` (`python -m eval_runner run`); `evals/` holds data
+  only, so "nothing under evals/ changes without consent" stays easy to check.
+- After review, the quick set was aligned with the proposal's wording (one per
+  fault class, one cascade, one healthy, one metrics gap) and two alerts were
+  reworded so they do not use the answer's vocabulary. Both happened before
+  the first commit of `evals/`.
+
+### Rule-engine baseline, end-to-end, all 18 cases (final code, 2026-11-21)
+
+One run per case. An earlier full run on the pre-fix code gave the same
+answers on 17 cases; the 18th is the one the fixes changed (see below).
+
+Basic tier
+
+| Case | Expected | Answered | Outcome |
+|---|---|---|---|
+| basic-dropped-index | missing_index_slow_query | missing_index_slow_query | hit |
+| basic-unindexed-query | missing_index_slow_query | missing_index_slow_query | hit |
+| basic-long-transaction | lock_wait | lock_wait | hit |
+| basic-blocked-schema-change | lock_wait | lock_wait | hit |
+| basic-idle-flood | connection_exhaustion | connection_exhaustion | hit |
+| basic-gradual-leak | connection_exhaustion | connection_exhaustion | hit |
+| basic-healthy-quiet | healthy | healthy | hit |
+| basic-healthy-vague-alert | healthy | healthy | hit |
+
+Hit rate 100.0% (6/6). False-positive rate 0.0% (0/2). Index suggestion
+correct 100.0% (2/2). Median onset error 15 s.
+
+Hard tier
+
+| Case | Kind | Expected | Answered | Outcome |
+|---|---|---|---|---|
+| hard-cascade-lock-wait | cascade | lock_wait | lock_wait | hit |
+| hard-cascade-slow-query | cascade | missing_index_slow_query | missing_index_slow_query | hit |
+| hard-lookalike-high-load | healthy lookalike | healthy | healthy | hit |
+| hard-lookalike-slow-report | healthy lookalike | healthy | healthy | hit |
+| hard-early-dropped-index | incomplete evidence | missing_index_slow_query | missing_index_slow_query | hit |
+| hard-early-long-transaction | incomplete evidence | lock_wait | lock_wait | hit |
+| hard-early-gradual-leak | incomplete evidence | connection_exhaustion | undetermined | acceptable |
+| hard-hostile-comment | hostile input | lock_wait | lock_wait | hit |
+| hard-metrics-gap-admin-port | metrics gap | connection_exhaustion | connection_exhaustion | hit |
+| hard-metrics-gap-no-admin-port | metrics gap | connection_exhaustion | undetermined | acceptable |
+
+Hit rate 75.0% (6/8). Acceptable, not hits: 2. Misses: 0. False-positive rate
+0.0% (0/2). Symptom-as-cause 0.0% (0/2). Symptoms listed 100.0% (2/2).
+Missing metric read as healthy 0.0% (0/2). Undetermined rate 20.0% (2/10).
+Index suggestion correct 100.0% (2/2). Median onset error 13 s.
+
+All cases: hit rate 85.7% (12/14), false-positive rate 0.0% (0/4), index
+suggestion correct 100.0% (4/4).
+
+### How to read these numbers
+
+- **They are high because the rules were written by someone who knew the
+  scenarios.** The baseline is not evidence that rules suffice in general. Its
+  use is as a regression gate, and as the bar a model must at least match on
+  cases where rules have every advantage.
+- The two non-hits are both "undetermined" where that is the designed answer:
+  a leak eight seconds old, and a database that cannot be entered at all.
+- The hostile-input case says nothing about rules (they never read SQL
+  comments as instructions). It exists for the model backends.
+- One run per case. Small numbers: on the hard tier one case is 12.5 points.
+
+### Suggested thresholds (the owner decides)
+
+| Tier | Minimum hit rate | Maximum false-positive rate |
+|---|---|---|
+| basic | 1.0 (6/6) | 0.0 (0/2) |
+| hard | 0.625 (5/8) | 0.0 (0/2) |
+
+- Basic at 100%: these are single, fully developed faults. Any miss is a
+  regression worth stopping a merge for.
+- Hard at 5/8, one below the baseline of 6/8: the incomplete-evidence cases
+  sit near the rules' thresholds by design (a lock wait three seconds old may
+  show one waiter or three), so one of them turning "undetermined" on a given
+  run is expected variation, not a regression. Two would be.
+- False positives at zero on both tiers: a false alarm sends an on-call
+  engineer after nothing. With two healthy cases per tier, a single false
+  positive is already 50%.
+- Not covered by the two thresholds in the file, but worth gating later:
+  symptom-as-cause (now 0/2) and missing-metric-read-as-healthy (now 0/2).
+
+### What the first baseline run found in the lab itself
+
+1. **The idle flood did not stay full.** The no-admin-port case answered
+   "connection_exhaustion", which it could only have learned from inside.
+   Other clients leaving opened slots. The fault now retakes freed slots.
+2. **`SERVICE_CONNECTION_ADMIN` does more than open the admin port.** Measured
+   during a flood: `shop_diag` connected on the normal port as session 61 of
+   60, a second attempt was refused, and accounts without the privilege were
+   refused every time. So the privilege also grants the one connection MySQL
+   keeps in reserve. An earlier note in this file, and the reviewer, said from
+   memory that it only allows the admin port; that was wrong. The no-admin
+   tier is now modelled by `shop_diag_noadmin`, which lacks the privilege.

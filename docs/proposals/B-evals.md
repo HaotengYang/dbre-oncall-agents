@@ -1,6 +1,9 @@
 # Proposal B: eval system
 
-Status: proposal, awaiting owner confirmation. No code exists yet. Scoring
+Status: approved by the owner on 2026-11-20 and implemented on 2026-11-21, with
+three deviations recorded in `docs/PROGRESS.md`: case files are JSON, the code is in
+`eval_runner/` (the command is `python -m eval_runner`), and the no-admin tier
+uses a separate account. Scoring
 rules already approved in `docs/DESIGN.md` section 7 are restated here, not
 changed.
 
