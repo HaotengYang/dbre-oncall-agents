@@ -411,3 +411,10 @@ set is what the owner predicted. The rule engine is frozen and was not changed.
 
 The four holdout scenarios also pass the injector's common lab tests (20 of 20).
 
+Second end-to-end rule-engine run (the recording run for C4, same day): basic
+6/6, hard 6/8, holdout 1/3, no false positives. The only difference from the
+first run is `hard-early-long-transaction`, a hit this time and a miss before:
+three seconds into a fault, whether a blocked update has been caught waiting
+is chance. Evidence for all 22 cases is recorded in `var/recordings/` (not in
+git) and ready for replay.
+
