@@ -5,7 +5,6 @@ stops there and answers "connection exhaustion" has named the symptom. The
 root cause is what made the connections pile up.
 """
 
-import contextlib
 import random
 
 import pymysql
@@ -82,13 +81,17 @@ class LockWaitExhaustsConnections(Fault):
 def run_unindexed_report_until_stopped(connection, stop_requested):
     random_source = random.Random()
     while not stop_requested.is_set():
-        with contextlib.suppress(pymysql.MySQLError):
+        try:
             with connection.cursor() as cursor:
                 cursor.execute(
                     UNINDEXED_REPORT_SQL,
                     (random_source.randint(1, PRODUCT_COUNT), random_source.randint(1, 3)),
                 )
                 cursor.fetchall()
+        except pymysql.MySQLError:
+            # Pause instead of retrying at once: a client whose session was
+            # cut off would otherwise spin.
+            stop_requested.wait(0.5)
 
 
 class SlowQueryExhaustsConnections(Fault):

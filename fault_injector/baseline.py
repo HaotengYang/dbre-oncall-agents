@@ -82,25 +82,29 @@ def drop_index_sql(definition):
 
 
 def end_orphaned_schema_sessions(connection, wait_seconds=10):
-    """Ends other sessions of the schema account and waits until they are gone.
+    """Ends schema changes left running by an injector that died.
 
-    Call only while holding the injector lock, when no injector can be
-    running: any such session then belongs to an injector that died, and may
-    be a schema change that is still waiting or building. Ended first, it
-    cannot create an index after the baseline has been restored. An account
-    may always end its own sessions; no extra privilege is involved.
+    Only sessions of this account whose current statement creates an
+    injector-owned index (INJECTOR_INDEX_PREFIX) are ended. Idle sessions and
+    other statements are left alone, so a concurrent "status" command or
+    another control connection is not cut off. Ended first, an orphaned schema
+    change cannot create its index after the baseline has been restored. An
+    account may always end its own sessions; no extra privilege is involved.
     """
     import time
 
-    def other_session_ids():
+    def orphaned_session_ids():
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT ID FROM information_schema.PROCESSLIST "
-                "WHERE USER = SUBSTRING_INDEX(CURRENT_USER(), '@', 1) AND ID <> CONNECTION_ID()"
+                "WHERE USER = SUBSTRING_INDEX(CURRENT_USER(), '@', 1) "
+                "AND ID <> CONNECTION_ID() "
+                "AND INFO LIKE %s",
+                (f"CREATE INDEX {INJECTOR_INDEX_PREFIX}%",),
             )
             return [row[0] for row in cursor.fetchall()]
 
-    ended_session_ids = other_session_ids()
+    ended_session_ids = orphaned_session_ids()
     with connection.cursor() as cursor:
         for session_id in ended_session_ids:
             try:
@@ -108,7 +112,7 @@ def end_orphaned_schema_sessions(connection, wait_seconds=10):
             except Exception:
                 pass  # it ended by itself in the meantime
     deadline = time.monotonic() + wait_seconds
-    while other_session_ids() and time.monotonic() < deadline:
+    while orphaned_session_ids() and time.monotonic() < deadline:
         time.sleep(0.2)
     return ended_session_ids
 
