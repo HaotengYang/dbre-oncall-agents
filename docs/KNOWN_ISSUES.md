@@ -166,3 +166,23 @@ review findings left after the allowed review rounds are recorded here.
   Three were reworded after review because they shared words with their
   target; the rest may still be easier than real alerts.
 
+## Change safety gate (step D)
+
+Approved after two review rounds. Left as known:
+
+- **The target-query table check is shallow.** It looks at the first name after
+  each FROM or JOIN, so comma joins and STRAIGHT_JOIN pass it. Harmless today:
+  the EXPLAIN runs in `shop_shadow`, where only the copied table exists, on a
+  read-only session, and the gate account can read no other schema.
+- **The statement log does not see the EXPLAIN path's own session setup**
+  (`SET SESSION TRANSACTION READ ONLY`, `SELECT CONNECTION_ID()`, a possible
+  `KILL` of its own session), and records the EXPLAIN even when it was skipped.
+- **A long autocommit SELECT holding a metadata lock** is not seen by the risk
+  check (it is not in INNODB_TRX). The apply's 5 s lock wait and the explicit
+  `ALGORITHM = INPLACE LOCK = NONE` limit the effect.
+- **Error codes 1845/1846** (online build not possible) are taken from MySQL's
+  documentation; no lab table reproduces them, so the "blocked" path is tested
+  only with constructed rehearsal results.
+- **Unique indexes are not supported** by design: a duplicate would fail the
+  build half-way.
+
