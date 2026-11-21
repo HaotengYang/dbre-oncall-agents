@@ -76,6 +76,35 @@ def test_diag_can_read_statement_digests_with_sample_text(connect_as):
     assert execution_count >= 10
 
 
+@pytest.mark.parametrize(
+    "user_name, password_variable",
+    [("shop_app", "APP_DB_PASSWORD"), ("shop_gate", "GATE_DB_PASSWORD"),
+     ("shop_fault", "FAULT_DB_PASSWORD")],
+)
+def test_only_the_diagnosis_account_may_use_the_admin_port(lab_env, user_name, password_variable):
+    with pytest.raises(pymysql.MySQLError) as refused:
+        pymysql.connect(
+            host="127.0.0.1", port=int(lab_env.get("MYSQL_ADMIN_HOST_PORT", "13307")),
+            user=user_name, password=lab_env[password_variable], connect_timeout=5,
+        )
+
+    assert refused.value.args[0] == 1227  # a privilege is required
+
+
+def test_admin_port_gives_the_diagnosis_account_no_write_or_kill(observer_connection, connect_as):
+    victim_connection = connect_as("shop_app")
+    victim_session_id = fetch_value(victim_connection, "SELECT CONNECTION_ID()")
+
+    assert_denied(observer_connection, "UPDATE shop.orders SET status = 'cancelled' WHERE id = 1")
+    assert_denied(observer_connection, "SET GLOBAL max_connections = 1000")
+    with pytest.raises(pymysql.MySQLError) as kill_refused:
+        with observer_connection.cursor() as cursor:
+            cursor.execute(f"KILL {int(victim_session_id)}")
+
+    assert kill_refused.value.args[0] == 1095  # not the owner of that thread
+    assert fetch_value(victim_connection, "SELECT 1") == 1
+
+
 def test_diag_can_see_other_sessions(connect_as):
     connection = connect_as("shop_diag")
 

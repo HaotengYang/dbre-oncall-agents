@@ -167,6 +167,10 @@ def test_lock_wait_cascade_fills_connections_with_sessions_blocked_on_one_transa
     try:
         wait_until(lambda: fetch_value(observer_connection, SESSIONS) >= NEARLY_FULL,
                    timeout_seconds=60)
+        # A session is connected a moment before its update starts waiting,
+        # so the lock waits are polled for rather than read once.
+        wait_until(lambda: fetch_value(observer_connection, ROW_LOCK_WAITS) >= 40,
+                   timeout_seconds=20, interval_seconds=0.5)
         row_lock_waits = fetch_value(observer_connection, ROW_LOCK_WAITS)
         blockers = fetch_all(
             observer_connection,
