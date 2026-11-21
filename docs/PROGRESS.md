@@ -354,3 +354,14 @@ inputs the orchestrator and the rule engine disagree, on purpose.
 - Holdout cases: eight questions at the end of the proposal.
 - C4: model list, spending cap, API key.
 
+### Stability after C1 (2026-11-21)
+
+Basic tier, three consecutive runs of all eight cases with the rule engine:
+24 of 24 correct. `basic-long-transaction`, which had been right 6 times in
+9 before C1, was right 3 of 3. As the owner had ordered, the basic-tier
+threshold was then raised from 5/6 to 6/6.
+
+Orchestrator lab tests: 3 of 3 pass (lock wait in one round; locked out
+without the admin port escalates after three rounds with the exhaustion
+symptom; the CLI's JSON report on a healthy lab).
+
