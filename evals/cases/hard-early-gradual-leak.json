@@ -1,0 +1,16 @@
+{
+  "id": "hard-early-gradual-leak",
+  "tier": "hard",
+  "kind": "incomplete_evidence",
+  "scenario": "connection_exhaustion.gradual_leak",
+  "observe_seconds": 8,
+  "admin_port_available": true,
+  "alert": "A few requests have started failing on and off in the last seconds.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [
+      "undetermined"
+    ],
+    "symptoms": []
+  }
+}

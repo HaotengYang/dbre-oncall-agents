@@ -7,7 +7,7 @@ import pymysql
 import pytest
 
 from fault_injector.lab import NotLabEnvironmentError, assert_lab_environment
-from fault_injector.registry import ROOT_CAUSE_LABELS, find_fault, list_faults
+from fault_injector.registry import ROOT_CAUSE_LABELS, SCENARIO_LABELS, find_fault, list_faults
 
 
 def test_fault_ids_have_the_form_class_dot_variant_and_are_unique():
@@ -23,8 +23,15 @@ def test_every_fault_uses_a_root_cause_label_from_the_design():
     assert ROOT_CAUSE_LABELS == {
         "missing_index_slow_query", "lock_wait", "connection_exhaustion",
     }
+    assert SCENARIO_LABELS == ROOT_CAUSE_LABELS | {"healthy"}
     for fault in list_faults():
-        assert fault.root_cause in ROOT_CAUSE_LABELS, fault.fault_id
+        assert fault.root_cause in SCENARIO_LABELS, fault.fault_id
+
+
+def test_only_the_healthy_scenarios_carry_the_healthy_label():
+    for fault in list_faults():
+        is_healthy_scenario = fault.fault_id.startswith("healthy.")
+        assert (fault.root_cause == "healthy") == is_healthy_scenario, fault.fault_id
 
 
 def test_expected_symptoms_are_labels_other_than_the_root_cause():
@@ -50,6 +57,7 @@ def test_each_class_has_two_or_three_variants():
 
     assert variants_per_class == {
         "missing_index": 2, "lock_wait": 2, "connection_exhaustion": 2, "cascade": 2,
+        "healthy": 2, "adversarial": 1,
     }
 
 

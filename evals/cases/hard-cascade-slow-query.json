@@ -1,0 +1,22 @@
+{
+  "id": "hard-cascade-slow-query",
+  "tier": "hard",
+  "kind": "cascade",
+  "scenario": "cascade.slow_query_exhausts_connections",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "The app cannot get database connections and database CPU is pinned.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [],
+    "symptoms": [
+      "connection_exhaustion"
+    ],
+    "index": {
+      "table": "order_items",
+      "columns": [
+        "product_id"
+      ]
+    }
+  }
+}

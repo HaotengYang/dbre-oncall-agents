@@ -1,0 +1,14 @@
+{
+  "id": "hard-lookalike-slow-report",
+  "tier": "hard",
+  "kind": "healthy_lookalike",
+  "scenario": "healthy.slow_report",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "There is a query taking over 300 ms in the statement list. Is that our problem?",
+  "expected": {
+    "root_cause": "healthy",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

@@ -8,7 +8,7 @@ import signal
 
 import pytest
 
-from fault_injector.registry import ROOT_CAUSE_LABELS, list_faults
+from fault_injector.registry import SCENARIO_LABELS, list_faults
 from lab_health.lab_state import wait_for_lab_baseline
 from tests.lab.conftest import fetch_value
 from tests.lab.fault_helpers import (
@@ -106,7 +106,7 @@ def test_injection_is_recorded_with_label_and_times(fault_id):
     started, ended = read_events()[events_before:]
     assert started["event"] == "started" and ended["event"] == "ended"
     assert started["fault_id"] == fault_id
-    assert started["root_cause"] in ROOT_CAUSE_LABELS
+    assert started["root_cause"] in SCENARIO_LABELS
     assert started["changes"]
     assert started["started_at"] < ended["ended_at"]  # ISO timestamps sort as text
     assert ended["ended_by"] == "injector"

@@ -79,7 +79,7 @@ def test_diag_can_read_statement_digests_with_sample_text(connect_as):
 @pytest.mark.parametrize(
     "user_name, password_variable",
     [("shop_app", "APP_DB_PASSWORD"), ("shop_gate", "GATE_DB_PASSWORD"),
-     ("shop_fault", "FAULT_DB_PASSWORD")],
+     ("shop_fault", "FAULT_DB_PASSWORD"), ("shop_diag_noadmin", "DIAG_DB_PASSWORD")],
 )
 def test_only_the_diagnosis_account_may_use_the_admin_port(lab_env, user_name, password_variable):
     with pytest.raises(pymysql.MySQLError) as refused:
@@ -103,6 +103,19 @@ def test_admin_port_gives_the_diagnosis_account_no_write_or_kill(observer_connec
 
     assert kill_refused.value.args[0] == 1095  # not the owner of that thread
     assert fetch_value(victim_connection, "SELECT 1") == 1
+
+
+def test_the_no_admin_diagnosis_account_reads_the_same_and_writes_nothing(connect_as):
+    connection = connect_as("shop_diag_noadmin")
+
+    assert fetch_value(
+        connection, "SELECT COUNT(*) FROM performance_schema.events_statements_summary_by_digest"
+    ) > 0
+    assert fetch_value(connection, "SELECT COUNT(*) FROM shop.products") == 1_000
+    assert fetch_value(connection, "SELECT COUNT(*) FROM information_schema.INNODB_TRX") >= 0
+    assert_denied(connection, "UPDATE shop.orders SET status = 'cancelled' WHERE id = 1")
+    assert_denied(connection, "DROP TABLE shop.orders")
+    assert_denied(connection, "SET GLOBAL max_connections = 1000")
 
 
 def test_diag_can_see_other_sessions(connect_as):

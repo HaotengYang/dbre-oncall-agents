@@ -1,0 +1,260 @@
+"""The committed eval data is well-formed, thresholds behave, and the
+diagnosis side cannot see the answers."""
+
+import ast
+import json
+import pathlib
+import subprocess
+import sys
+
+import pytest
+
+from eval_runner.cases import load_cases
+from eval_runner.cli import EVALS_DIRECTORY, select_cases
+from eval_runner.scoring import CaseResult, classify_outcome
+from eval_runner.thresholds import ThresholdError, load_thresholds, threshold_violations
+from fault_injector.registry import find_fault
+
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[2]
+ALL_CASES = load_cases(EVALS_DIRECTORY / "cases")
+
+
+def test_the_case_set_is_the_approved_eighteen():
+    by_tier = {tier: [c for c in ALL_CASES if c.tier == tier] for tier in ("basic", "hard")}
+    kinds = [case.kind for case in ALL_CASES]
+
+    assert len(by_tier["basic"]) == 8 and len(by_tier["hard"]) == 10
+    assert kinds.count("single_fault") == 6 and kinds.count("healthy") == 2
+    assert kinds.count("cascade") == 2 and kinds.count("healthy_lookalike") == 2
+    assert kinds.count("incomplete_evidence") == 3 and kinds.count("hostile_input") == 1
+    assert kinds.count("metrics_gap") == 2
+
+
+@pytest.mark.parametrize("case", [c for c in ALL_CASES if c.scenario], ids=lambda c: c.case_id)
+def test_case_agrees_with_the_scenario_it_names(case):
+    scenario = find_fault(case.scenario)  # raises if the scenario does not exist
+
+    assert scenario.root_cause == case.expected_root_cause
+    assert set(scenario.expected_symptoms) == set(case.expected_symptoms)
+
+
+def test_every_missing_index_case_states_the_expected_index():
+    for case in ALL_CASES:
+        if case.expected_root_cause == "missing_index_slow_query":
+            assert case.expected_index is not None, case.case_id
+        else:
+            assert case.expected_index is None, case.case_id
+
+
+def test_incomplete_evidence_and_the_no_admin_port_case_accept_undetermined():
+    for case in ALL_CASES:
+        if case.kind == "incomplete_evidence" or not case.admin_port_available:
+            assert case.also_acceptable == ("undetermined",), case.case_id
+        else:
+            assert case.also_acceptable == (), case.case_id
+
+
+def test_quick_set_names_existing_cases_and_covers_both_tiers():
+    quick_cases = select_cases(ALL_CASES, "quick", None)
+
+    assert 5 <= len(quick_cases) <= 7
+    assert {case.tier for case in quick_cases} == {"basic", "hard"}
+    assert any(case.kind == "healthy" for case in quick_cases)
+    assert any(case.kind == "cascade" for case in quick_cases)
+
+
+def test_committed_thresholds_load():
+    thresholds = load_thresholds(EVALS_DIRECTORY / "thresholds.json")
+
+    assert set(thresholds) == {"basic", "hard"}
+
+
+def scored(case_id, tier, kind, expected, answer):
+    case = next(c for c in ALL_CASES if c.kind == kind and c.tier == tier)
+    case = type(case)(**{**case.__dict__, "case_id": case_id, "expected_root_cause": expected})
+    return CaseResult(case, answer, (), classify_outcome(case, answer), None, None, 1.0, None)
+
+
+def test_thresholds_flag_only_what_falls_short_and_null_checks_nothing():
+    results = [
+        scored("b1", "basic", "single_fault", "lock_wait", "lock_wait"),
+        scored("b2", "basic", "single_fault", "lock_wait", "healthy"),
+        scored("b3", "basic", "healthy", "healthy", "lock_wait"),
+    ]
+    unset = {tier: {"min_hit_rate": None, "max_false_positive_rate": None}
+             for tier in ("basic", "hard")}
+    strict = {"basic": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0},
+              "hard": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0}}
+    lenient = {"basic": {"min_hit_rate": 0.5, "max_false_positive_rate": 1.0},
+               "hard": {"min_hit_rate": 0.9, "max_false_positive_rate": 0.0}}
+
+    assert threshold_violations(results, unset) == []
+    violations = threshold_violations(results, strict)
+    # Basic: hit rate 1/2 under 90%, false positives 1/1 over 0%. Hard has no
+    # cases in this run, so it is not judged.
+    assert len(violations) == 2
+    assert "50.0% (1/2)" in violations[0] and "100.0% (1/1)" in violations[1]
+    assert threshold_violations(results, lenient) == []
+
+
+def test_any_case_without_an_answer_fails_the_check_even_with_no_thresholds_set():
+    healthy_case = next(c for c in ALL_CASES if c.kind == "healthy")
+    crashed = CaseResult(healthy_case, "(no answer)", (), "diagnosis_error", None, None, 0.1,
+                         "RuntimeError: backend failed")
+    unset = {tier: {"min_hit_rate": None, "max_false_positive_rate": None}
+             for tier in ("basic", "hard")}
+    zero_false_positives = {tier: {"min_hit_rate": None, "max_false_positive_rate": 0.0}
+                            for tier in ("basic", "hard")}
+
+    # A backend that crashes on a healthy case raised no false positive, and
+    # must still not pass.
+    for thresholds in (unset, zero_false_positives):
+        violations = threshold_violations([crashed], thresholds)
+        assert len(violations) == 1 and "no answer" in violations[0]
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["{not json", '{"basic": {}}',
+     '{"basic": {"min_hit_rate": 2, "max_false_positive_rate": null}, '
+     '"hard": {"min_hit_rate": null, "max_false_positive_rate": null}}',
+     '{"basic": {"min_hit_rate": "high", "max_false_positive_rate": null}, '
+     '"hard": {"min_hit_rate": null, "max_false_positive_rate": null}}'],
+)
+def test_malformed_thresholds_are_rejected(tmp_path, content):
+    thresholds_path = tmp_path / "thresholds.json"
+    thresholds_path.write_text(content)
+
+    with pytest.raises(ThresholdError):
+        load_thresholds(thresholds_path)
+
+
+# ---- ground-truth isolation (CLAUDE.md) --------------------------------
+
+# This scan is a tripwire, not a sandbox: it catches the ways the diagnosis side
+# could plausibly come to read the answers, by accident or by a careless
+# change. Code written to defeat it could.
+
+# Modules that hold the answers, or that could be used to reach them.
+FORBIDDEN_IMPORTS = ("fault_injector", "eval_runner", "evals", "importlib", "runpy",
+                     "builtins", "subprocess", "glob", "shutil", "pkgutil")
+FORBIDDEN_MODULES = ("fault_injector", "eval_runner", "evals")
+# Names that must not appear anywhere inside a string or bytes literal.
+FORBIDDEN_SUBSTRINGS = ("fault_injector", "eval_runner", "injections", "active_fault")
+# Short names that must not appear as a whole path or module part.
+FORBIDDEN_PARTS = ("evals", "var", "reports")
+# Calls that import or run code, or that search the filesystem.
+FORBIDDEN_CALLS = ("__import__", "import_module", "exec", "eval", "compile", "run_module",
+                   "run_path", "spec_from_file_location", "system", "popen",
+                   "rglob", "glob", "walk", "scandir", "listdir", "iterdir")
+# Attributes that expose modules already loaded by someone else.
+FORBIDDEN_ATTRIBUTES = ("modules", "meta_path", "path_hooks")
+DIAGNOSIS_DIRECTORY = REPOSITORY_ROOT / "diagnosis"
+DIAGNOSIS_SOURCES = sorted(DIAGNOSIS_DIRECTORY.rglob("*.py"))
+
+
+def isolation_violations(source_text):
+    """Returns why a piece of diagnosis-side source could reach the answers."""
+    tree = ast.parse(source_text)
+    violations = []
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant):
+                docstrings.add(id(first.value))
+    for node in ast.walk(tree):
+        imported = []
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            imported = [node.module or ""]
+        for module_name in imported:
+            if module_name.split(".")[0] in FORBIDDEN_IMPORTS:
+                violations.append(f"imports {module_name}")
+        if isinstance(node, ast.Call):
+            called_name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if called_name in FORBIDDEN_CALLS:
+                violations.append(f"calls {called_name}()")
+        if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ATTRIBUTES:
+            violations.append(f"uses .{node.attr}")
+        if isinstance(node, ast.Constant) and id(node) not in docstrings:
+            literal = node.value.decode("utf-8", "replace") if isinstance(node.value, bytes) \
+                else node.value
+            if not isinstance(literal, str):
+                continue
+            for forbidden in FORBIDDEN_SUBSTRINGS:
+                if forbidden in literal:
+                    violations.append(f"names {forbidden!r}")
+            parts = literal.replace("\\", "/").replace(".", "/").split("/")
+            for forbidden in FORBIDDEN_PARTS:
+                if forbidden in parts:
+                    violations.append(f"names the path part {forbidden!r}")
+    return violations
+
+
+@pytest.mark.parametrize("source_path", DIAGNOSIS_SOURCES, ids=lambda p: p.name)
+def test_diagnosis_source_cannot_reach_the_answers(source_path):
+    assert isolation_violations(source_path.read_text()) == []
+
+
+@pytest.mark.parametrize(
+    "offending_source, expected_fragment",
+    [
+        ("import fault_injector.records", "imports fault_injector.records"),
+        ("from eval_runner.cases import load_cases", "imports eval_runner.cases"),
+        ("import importlib\nimportlib.import_module('x')", "imports importlib"),
+        ("def f():\n    return __import__('fault_' + 'injector')", "calls __import__()"),
+        ("def f(m):\n    return m.import_module('fault_injector.records')", "calls import_module()"),
+        ("exec('import fault_injector')", "calls exec()"),
+        ("path = ROOT / 'evals' / 'cases'", "'evals'"),
+        ("path = ROOT / 'var' / 'reports'", "'var'"),
+        ("path = 'var/injections.jsonl'", "'injections'"),
+        ("name = 'active_fault.json'", "'active_fault'"),
+        # Found by the reviewer in round 2: each of these used to pass.
+        ("import sys\nrecords = sys.modules['fault_injector.records']", ".modules"),
+        ("import sys\nrecords = sys.modules['fault_injector.records']", "'fault_injector'"),
+        ("import subprocess\nsubprocess.run(['python', '-m', 'fault_injector.cli'])",
+         "imports subprocess"),
+        ("from builtins import __import__ as load\nm = load('x')", "imports builtins"),
+        ("found = [p.read_text() for p in ROOT.rglob('*.jsonl')]", "calls rglob()"),
+        ("data = open(b'var/injections.jsonl').read()", "'injections'"),
+        ("import os\nos.system('cat var/injections.jsonl')", "calls system()"),
+        ("name = 'evals.cases'", "'evals'"),
+    ],
+)
+def test_the_isolation_scan_catches_each_kind_of_violation(offending_source, expected_fragment):
+    violations = isolation_violations(offending_source)
+
+    assert any(expected_fragment in violation for violation in violations), violations
+
+
+def test_the_isolation_scan_ignores_docstrings_and_ordinary_code():
+    harmless = (
+        '"""Must not read var/ or evals/ or import fault_injector."""\n'
+        "import time\n"
+        "label = 'healthy'\n"
+        "def f():\n"
+        '    """Not allowed: evals."""\n'
+        "    return time.time()\n"
+    )
+
+    assert isolation_violations(harmless) == []
+
+
+def test_importing_every_diagnosis_module_loads_no_answer_holding_module():
+    module_names = sorted(
+        "diagnosis." + ".".join(source_path.relative_to(DIAGNOSIS_DIRECTORY).with_suffix("").parts)
+        for source_path in DIAGNOSIS_SOURCES if source_path.name != "__init__.py"
+    )
+    assert len(module_names) >= 5  # the scan is looking at real modules
+    check = (
+        "import importlib, sys\n"
+        f"for name in {module_names!r}:\n"
+        "    importlib.import_module(name)\n"
+        f"print(','.join(m for m in sys.modules if m.split('.')[0] in {FORBIDDEN_MODULES!r}))\n"
+    )
+    completed = subprocess.run([sys.executable, "-c", check], cwd=REPOSITORY_ROOT,
+                               capture_output=True, text=True, check=True)
+
+    assert completed.stdout.strip() == ""

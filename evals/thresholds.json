@@ -1,0 +1,10 @@
+{
+  "basic": {
+    "min_hit_rate": null,
+    "max_false_positive_rate": null
+  },
+  "hard": {
+    "min_hit_rate": null,
+    "max_false_positive_rate": null
+  }
+}

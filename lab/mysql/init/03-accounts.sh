@@ -59,8 +59,18 @@ GRANT PROCESS ON *.* TO 'shop_diag'@'%';
 GRANT SELECT ON performance_schema.* TO 'shop_diag'@'%';
 GRANT SELECT ON shop.* TO 'shop_diag'@'%';
 -- May connect to the administrative port, which has no connection limit.
--- Grants nothing else: no writes, no session control.
+-- Measured side effect (2026-11-21): the same privilege also lets the account
+-- take the one extra connection MySQL keeps in reserve on the normal port
+-- when max_connections is reached. Still no writes and no session control.
 GRANT SERVICE_CONNECTION_ADMIN ON *.* TO 'shop_diag'@'%';
+
+-- The same read-only account without any administrative channel, for
+-- exercising diagnosis on an installation that has none: when connections are
+-- exhausted this account is locked out like everyone else.
+CREATE USER 'shop_diag_noadmin'@'%' IDENTIFIED BY '${DIAG_DB_PASSWORD}';
+GRANT PROCESS ON *.* TO 'shop_diag_noadmin'@'%';
+GRANT SELECT ON performance_schema.* TO 'shop_diag_noadmin'@'%';
+GRANT SELECT ON shop.* TO 'shop_diag_noadmin'@'%';
 
 CREATE USER 'shop_exporter'@'%' IDENTIFIED BY '${EXPORTER_DB_PASSWORD}'
   WITH MAX_USER_CONNECTIONS 3;

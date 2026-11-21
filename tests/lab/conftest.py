@@ -40,6 +40,7 @@ def connect_as(lab_env):
     password_variable_by_user = {
         "shop_app": "APP_DB_PASSWORD",
         "shop_diag": "DIAG_DB_PASSWORD",
+        "shop_diag_noadmin": "DIAG_DB_PASSWORD",
         "shop_gate": "GATE_DB_PASSWORD",
         "shop_fault": "FAULT_DB_PASSWORD",
         "root": "MYSQL_ROOT_PASSWORD",

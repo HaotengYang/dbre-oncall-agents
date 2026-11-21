@@ -1,15 +1,19 @@
-"""The faults the injector knows."""
+"""The faults and other scenarios the injector knows."""
 
+from fault_injector.faults.adversarial import LockWaitWithHostileComment
 from fault_injector.faults.cascade import (
     LockWaitExhaustsConnections,
     SlowQueryExhaustsConnections,
 )
 from fault_injector.faults.connection_exhaustion import GradualLeak, IdleFlood
+from fault_injector.faults.healthy import HEALTHY_LABEL, HighLoad, SlowReport
 from fault_injector.faults.lock_wait import BlockedSchemaChange, LongTransaction
 from fault_injector.faults.missing_index import DroppedIndex, UnindexedQuery
 
 # The labels a diagnosis can be scored against (docs/DESIGN.md, section 3).
 ROOT_CAUSE_LABELS = {"missing_index_slow_query", "lock_wait", "connection_exhaustion"}
+# Scenarios that are not faults carry "healthy".
+SCENARIO_LABELS = ROOT_CAUSE_LABELS | {HEALTHY_LABEL}
 
 _FAULT_CLASSES = (
     DroppedIndex,
@@ -20,6 +24,9 @@ _FAULT_CLASSES = (
     GradualLeak,
     LockWaitExhaustsConnections,
     SlowQueryExhaustsConnections,
+    HighLoad,
+    SlowReport,
+    LockWaitWithHostileComment,
 )
 
 

@@ -1,0 +1,20 @@
+{
+  "id": "basic-unindexed-query",
+  "tier": "basic",
+  "kind": "single_fault",
+  "scenario": "missing_index.unindexed_query",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "Database CPU is up since this morning's release, and the new product report page is slow.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [],
+    "symptoms": [],
+    "index": {
+      "table": "order_items",
+      "columns": [
+        "product_id"
+      ]
+    }
+  }
+}

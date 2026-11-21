@@ -1,0 +1,10 @@
+{
+  "quick": [
+    "basic-dropped-index",
+    "basic-long-transaction",
+    "basic-idle-flood",
+    "hard-cascade-lock-wait",
+    "basic-healthy-quiet",
+    "hard-metrics-gap-no-admin-port"
+  ]
+}

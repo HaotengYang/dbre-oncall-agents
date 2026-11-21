@@ -70,3 +70,52 @@ review findings left after the allowed review rounds are recorded here.
   statements pooled under 0.1 s. A single slow low-volume statement type would
   no longer fail it. Reason: p99 of one statement over a short window is one or
   two samples.
+
+## Eval runner and rule engine (suspected findings left after review round 2)
+
+- **`IdleFlood` can leave connections open if its top-up thread does not end
+  within 20 s** of stop (a stalled connection handshake). Not reproduced.
+- **A freed slot stays open for up to 0.5 s** between top-ups, so an account
+  without the administrative privilege can, rarely, still get in during a
+  flood. The lab test saw 20 refusals in 20 attempts.
+- **The flood test relies on natural client churn** to exercise the top-up; it
+  does not free a slot itself.
+- **The refused-port rule looks at the error code, not at the path taken.** A
+  connection error with no code, reached through the admin port with all quiet
+  inside, would still be read as healthy.
+- **No test covers** the CLI's exit code 1 on a no-answer case or its
+  save-and-exit-3 path on an aborted run. The report text and the underlying
+  functions are tested; the CLI wiring is not.
+- **Onset can be attributed to the previous case's fault** when two faults are
+  close together: the estimate looks back ten minutes. Affects only the onset
+  figure, which is reported and not scored.
+- **A slow scan from one or two clients may be read as healthy.** The digest
+  table counts completed statements; a scan taking over two seconds completes
+  fewer than three times in the five-second window, and the rule requires
+  three. None of the current scenarios is that shape.
+- **The isolation scan is a tripwire, not a sandbox.** It catches static and
+  dynamic imports, known path parts, process spawning and filesystem search in
+  `diagnosis/`. Code written to get around it could.
+- **Review fixes for the eval work are not in commits of their own.** The
+  files were new and uncommitted when they were reviewed, and the fixes were
+  folded in before the first commit. This departs from the rule that review
+  fixes get their own commit; `docs/ai-notes.md` lists what the reviews found.
+
+## Lab accounts and data volumes
+
+- **A lab created before 2026-11-21 lacks `shop_diag_noadmin`.** Accounts are
+  created only on a fresh data volume. The eval runner's preflight detects
+  this and says to run `make reset`.
+- **`SERVICE_CONNECTION_ADMIN` also grants the reserved connection** on the
+  normal port (measured). Kept, because diagnosis needs a way in; documented
+  because it is more than the privilege's name suggests.
+
+## Rule engine
+
+- **`basic-long-transaction` is unstable: 6 hits in 9 runs.** The engine reads
+  the row-lock waiter count at one instant and needs two; during the fault the
+  count moves between 1 and 4. When it reads one, it answers `undetermined`.
+  Measured 2026-11-21. To be fixed in step C1 by sampling across the window
+  and by treating one idle transaction holding many row locks as strong
+  evidence. Until then the basic-tier hit rate varies between 5/6 and 6/6.
+

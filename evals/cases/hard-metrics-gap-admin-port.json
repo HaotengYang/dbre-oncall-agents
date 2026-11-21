@@ -1,0 +1,14 @@
+{
+  "id": "hard-metrics-gap-admin-port",
+  "tier": "hard",
+  "kind": "metrics_gap",
+  "scenario": "connection_exhaustion.idle_flood",
+  "observe_seconds": 25,
+  "admin_port_available": true,
+  "alert": "The database dashboard has gone blank and the app cannot connect.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

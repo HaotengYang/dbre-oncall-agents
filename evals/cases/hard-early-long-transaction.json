@@ -1,0 +1,16 @@
+{
+  "id": "hard-early-long-transaction",
+  "tier": "hard",
+  "kind": "incomplete_evidence",
+  "scenario": "lock_wait.long_transaction",
+  "observe_seconds": 3,
+  "admin_port_available": true,
+  "alert": "An order update just timed out, seconds ago.",
+  "expected": {
+    "root_cause": "lock_wait",
+    "also_acceptable": [
+      "undetermined"
+    ],
+    "symptoms": []
+  }
+}

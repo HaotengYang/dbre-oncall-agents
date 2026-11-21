@@ -173,4 +173,41 @@ used and what it achieved.
 - 2026-11-20: Claude's first fix for "do not end sessions that are not orphans"
   was itself found too broad in round 1 and too narrow in round 2. The
   narrower version was kept and the gap recorded.
+- 2026-11-21: **The eval's first run tested the lab, not the diagnosis.** The
+  baseline came back suspiciously good, and one answer was impossible: the
+  case with no way into the database had answered from inside it. Following
+  that up, with measurements rather than recall, found two lab defects: the
+  connection flood did not stay full, and the privilege granted for the admin
+  port also grants MySQL's reserved connection on the normal port. Both
+  Claude and the reviewer subagent had stated the opposite from memory.
+  Lesson: an eval result that looks too good is a finding about the eval.
+- 2026-11-21: **Deliberately wrong backends as a check on the scorer.** Two
+  test doubles, "always healthy" and "always connection exhaustion", are run
+  through the real runner against the real lab. They must score 0 hits and
+  100% symptom-as-cause respectively. Why: a scorer can be wrong in ways unit
+  tests of the scorer do not show. Effect: the scoring is known to be wired to
+  what actually happened in the lab.
+- 2026-11-21: **Review, two rounds, eval system.** Round 1: a refused port
+  could be read as healthy; a backend that crashed on healthy cases would pass
+  the false-positive gate; one malformed field from a backend ended the whole
+  run. Round 2: `make verify` could not return the eval's exit code (make
+  turns every failure into 2), the isolation scan missed dynamic imports and
+  bare path parts, and an old lab volume would make one case pass for the
+  wrong reason. All fixed. The isolation scan is now tested against the very
+  snippets the reviewer used to get past it.
+- 2026-11-21: Claude twice wrote a file-patching script whose pattern matched
+  the wrong number of places, and reported the result of a run that had not
+  applied the change. Caught by reading the output (the scenario was "unknown")
+  rather than the summary line. The file was then rewritten whole.
+- 2026-11-21: The owner asked for an expected index on missing-index cases and
+  for every rate to show its fraction. Both are in: "Index suggestion correct
+  100.0% (4/4)" is a separate line that never changes a hit into a miss.
+- 2026-11-21: **`verify` earned its keep on its first run.** Two full baseline
+  runs had the rule engine at 6/6 on the basic tier. The first `verify` run
+  got 2/3 on the same cases. Repeating the differing case five times gave
+  hit, miss, hit, hit, miss. The engine reads one number at one instant, and
+  that number flickers. Had the baseline been reported from the two full runs
+  alone, the owner would have been given "100%" for something that is right
+  two times in three. Lesson: one run is an anecdote; stability has to be
+  measured, which is why the design lists it as its own dimension.
 
