@@ -21,7 +21,10 @@ RATE_KEYS = ("min_hit_rate", "max_false_positive_rate")
 QUICK_KEYS = ("max_false_positives", "max_misses")
 # Outcomes that count as a miss for the quick set's count. "acceptable" is not
 # one: it is the designed answer on thin evidence.
-MISS_OUTCOMES = ("miss", "symptom_as_cause", "missing_metric_read_as_healthy")
+# A healthy case answered "undetermined" counts toward the miss allowance too
+# (owner, 2026-11-21). It is not a false positive.
+MISS_OUTCOMES = ("miss", "symptom_as_cause", "missing_metric_read_as_healthy",
+                 "undetermined_on_healthy")
 
 
 class ThresholdError(Exception):

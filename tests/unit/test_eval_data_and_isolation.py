@@ -140,6 +140,21 @@ def test_quick_set_is_judged_by_counts_not_rates():
     assert len(false_positive_violations) == 1 and "fp0" in false_positive_violations[0]
 
 
+def test_undetermined_on_a_healthy_case_uses_the_quick_set_miss_allowance():
+    healthy_case = next(c for c in ALL_CASES if c.kind == "healthy")
+    undetermined = CaseResult(healthy_case, "undetermined", (),
+                              classify_outcome(healthy_case, "undetermined"), None, None, 1.0, None)
+    one_real_miss = basic_tier_results(2, 1)
+
+    assert undetermined.outcome == "undetermined_on_healthy"
+    # Alone it fits the allowance of one and is not a false positive.
+    assert threshold_violations([undetermined], OWNER_THRESHOLDS, "quick") == []
+    # With one real miss it makes two, which is over the allowance.
+    violations = threshold_violations(one_real_miss + [undetermined], OWNER_THRESHOLDS, "quick")
+    assert len(violations) == 1 and "2 miss(es)" in violations[0]
+    assert "false positive" not in violations[0]
+
+
 def test_acceptable_answers_are_not_misses_on_the_quick_set():
     case = next(c for c in ALL_CASES if c.kind == "incomplete_evidence")
     acceptable = [CaseResult(case, "undetermined", (), classify_outcome(case, "undetermined"),
