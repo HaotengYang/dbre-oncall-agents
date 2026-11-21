@@ -123,7 +123,10 @@ review findings left after the allowed review rounds are recorded here.
 
 - **The frozen rule engine reads a lab without `max_connections` as healthy.**
   The rule engine cannot be changed (frozen). The orchestrator refuses
-  "healthy" in that case; the `rule_engine` eval backend does not.
+  "healthy" whenever the metrics agent reports missing metrics or an
+  unreachable exporter, and answers "undetermined". Accepted by the owner on
+  2026-11-21. Consequence: on such inputs the orchestrator and the rule engine
+  give different answers, and reports comparing them say so.
 - **After a Prometheus restart, a healthy lab escalates as "undetermined".**
   The one-minute trend is absent until two samples exist, the orchestrator
   refuses "healthy" with a metric missing, and three rounds 5 s apart are too

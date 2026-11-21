@@ -61,8 +61,11 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 - [x] C3. Orchestrator, report and `python -m diagnosis` CLI. Reviewed twice
 - [ ] C4. Connect the LLM; owner approves model list and budget first; then
       multi-model comparison
-- [ ] C5. SOP retrieval: ten runbooks, keyword and vector, hit-rate comparison
-- [ ] C6. Inspection agent
+- [ ] C5. SOP retrieval: ten runbooks, keyword retrieval first (owner, 2026-11-21);
+      vector only if time remains
+- [~] C6. Inspection agent: CUT FOR TIME (owner, 2026-11-21). The deadline is
+      Monday; the owner chose the holdout set, the model comparison and keyword
+      retrieval over a scheduled inspection agent, which no eval case measures
 
 ### D. Change safety gate
 
@@ -364,4 +367,19 @@ threshold was then raised from 5/6 to 6/6.
 Orchestrator lab tests: 3 of 3 pass (lock wait in one round; locked out
 without the admin port escalates after three rounds with the exhaustion
 symptom; the CLI's JSON report on a healthy lab).
+
+## Owner decisions, 2026-11-21 (after C3)
+
+- C4: Opus 5.5, Sonnet 5.5, Haiku 5.5; spending cap 40 USD. The Anthropic
+  Python SDK was installed into the project's `.venv` with the owner's consent.
+- Holdout: only H1, H4, H5, H6. H2 (two unrelated faults) and H3 (read-only
+  server) are not built; they go into the README's limitations. H1's answer is
+  `connection_exhaustion` with `undetermined` acceptable; H4 is accepted if its
+  completion criterion 12 passes; H6 is `healthy`. Holdout cases live in their
+  own directory and set, with no thresholds.
+- Quick set: a healthy case answered `undetermined` counts toward the "at most
+  one miss" allowance, not as a false positive.
+- The orchestrator's refusal of "healthy" with missing metrics is accepted; the
+  report must say that the orchestrator and the rule engine differ there.
+- C6 inspection agent cut for time.
 
