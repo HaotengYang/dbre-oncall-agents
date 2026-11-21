@@ -1,6 +1,7 @@
 """Command line: python -m eval_runner <command>."""
 
 import argparse
+import datetime
 import json
 import pathlib
 import sys
@@ -96,6 +97,83 @@ def run_command(arguments):
     return 0
 
 
+def record_command(arguments):
+    from eval_runner.model_comparison import record_cases
+
+    all_cases = load_cases(EVALS_DIRECTORY / "cases")
+    cases = select_cases(all_cases, arguments.set, arguments.case)
+    check_lab_accounts()
+    print(f"recording {len(cases)} case(s); each also scores the rule engine end to end",
+          flush=True)
+
+    def show_progress(case_result):
+        print(f"  {case_result.case.case_id}: expected {case_result.case.expected_root_cause}, "
+              f"answered {case_result.answered_root_cause} -> {case_result.outcome}", flush=True)
+
+    aborted_reason = None
+    try:
+        results = record_cases(cases, on_result=show_progress)
+    except RunAborted as aborted:
+        results, aborted_reason = aborted.results, str(aborted)
+    report_path = save_report(results, "rule_engine (recording run)", aborted_reason=aborted_reason)
+    print()
+    print(format_report(results, "rule_engine (recording run)", aborted_reason))
+    print(f"report saved to {report_path}")
+    return EXIT_ABORTED if aborted_reason else 0
+
+
+def replay_command(arguments):
+    from eval_runner.model_comparison import (
+        APPROVED_MODELS,
+        REPORTS_SUBDIRECTORY,
+        SpendLedger,
+        calibration_summary,
+        format_replay_report,
+        load_api_client,
+        replay,
+        replay_results_as_json,
+    )
+
+    models = tuple(arguments.models.split(",")) if arguments.models else APPROVED_MODELS
+    unapproved = [model for model in models if model not in APPROVED_MODELS]
+    if unapproved:
+        raise CaseError(f"models not approved by the owner: {unapproved}")
+    all_cases = load_cases(EVALS_DIRECTORY / "cases")
+    cases = select_cases(all_cases, arguments.set, arguments.case)
+    try:
+        client = load_api_client()
+    except KeyError:
+        print("error: ANTHROPIC_API_KEY is not set in .env; the rule engine needs no key, "
+              "model replay does", file=sys.stderr)
+        return EXIT_USAGE
+    ledger = SpendLedger()
+    print(f"replaying {len(cases)} case(s) to {', '.join(models)}, {arguments.repeats} repeat(s); "
+          f"spent so far {ledger.total_usd:.2f} of {ledger.cap_usd:.2f} USD", flush=True)
+
+    def show_progress(replay_result):
+        r = replay_result.case_result
+        print(f"  {replay_result.backend} #{replay_result.repeat} {r.case.case_id}: "
+              f"{r.answered_root_cause} -> {r.outcome} ({replay_result.cost_usd:.4f} USD)",
+              flush=True)
+
+    results, stop_reason = replay(cases, client, models=models, repeats=arguments.repeats,
+                                  ledger=ledger, max_calls=arguments.max_calls,
+                                  on_result=show_progress)
+    REPORTS_SUBDIRECTORY.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = REPORTS_SUBDIRECTORY / f"{stamp}-replay.json"
+    report = replay_results_as_json(results, stop_reason)
+    report["text"] = format_replay_report(results, stop_reason)
+    report_path.write_text(json.dumps(report, indent=1))
+    print()
+    print(report["text"])
+    print(f"total spent on model calls so far: {ledger.total_usd:.2f} of {ledger.cap_usd:.2f} USD")
+    print("cost calibration:")
+    print(calibration_summary(ledger, models, len(cases), arguments.repeats))
+    print(f"report saved to {report_path}")
+    return 0
+
+
 def report_command(arguments):
     latest_path = REPORTS_DIRECTORY / "latest.json"
     if not latest_path.exists():
@@ -120,9 +198,23 @@ def main(argument_list=None):
                      help="run a single case by id (with --set holdout for a holdout case)")
     run.add_argument("--backend", default="rule_engine", choices=sorted(BACKENDS))
     commands.add_parser("report", help="print the last report again")
+    record = commands.add_parser(
+        "record", help="run cases end to end, saving the evidence for replay")
+    record.add_argument("--set", default="all")
+    record.add_argument("--case", default=None)
+    replay_parser = commands.add_parser(
+        "replay", help="give recorded evidence to the approved models (costs money)")
+    replay_parser.add_argument("--set", default="all")
+    replay_parser.add_argument("--case", default=None)
+    replay_parser.add_argument("--models", default=None,
+                               help="comma-separated; default: all approved models")
+    replay_parser.add_argument("--repeats", type=int, default=5)
+    replay_parser.add_argument("--max-calls", type=int, default=None,
+                               help="stop after this many model calls (for cost calibration)")
     arguments = parser.parse_args(argument_list)
     try:
-        return {"run": run_command, "report": report_command}[arguments.command](arguments)
+        return {"run": run_command, "report": report_command, "record": record_command,
+                "replay": replay_command}[arguments.command](arguments)
     except (CaseError, ThresholdError, PreflightError) as problem:
         print(f"error: {problem}", file=sys.stderr)
         return EXIT_USAGE
