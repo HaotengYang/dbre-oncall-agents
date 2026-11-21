@@ -44,6 +44,7 @@ def test_started_and_ended_events_share_an_injection_id(tmp_path):
     assert started == {
         "event": "started", "injection_id": injection_id,
         "fault_id": "lock_wait.long_transaction", "root_cause": "lock_wait",
+        "expected_symptoms": [],
         "started_at": "2026-11-20T10:00:00+00:00", "changes": ["hold row locks"],
     }
     assert ended == {
@@ -146,3 +147,17 @@ def test_unreadable_claim_is_reported_not_raised(tmp_path):
 
         assert claim["injection_id"] is None
         assert "unreadable" in claim["fault_id"]
+
+
+def test_expected_symptoms_are_recorded_for_cascading_faults(tmp_path):
+    injection_id = new_injection_id()
+    record_injection_started(
+        tmp_path, injection_id=injection_id, fault_id="cascade.lock_wait_exhausts_connections",
+        root_cause="lock_wait", started_at="2026-11-20T10:00:00+00:00", changes=[],
+        expected_symptoms=("connection_exhaustion",),
+    )
+
+    started = read_injection_events(tmp_path)[0]
+
+    assert started["root_cause"] == "lock_wait"
+    assert started["expected_symptoms"] == ["connection_exhaustion"]

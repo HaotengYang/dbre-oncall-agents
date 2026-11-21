@@ -10,6 +10,7 @@ import pymysql
 from fault_injector import records
 from fault_injector.baseline import (
     DDL_LOCK_WAIT_TIMEOUT_SECONDS,
+    end_orphaned_schema_sessions,
     find_missing_indexes,
     find_unexpected_indexes,
     read_live_indexes,
@@ -50,6 +51,11 @@ class LabAccess:
     def open_app_connection(self, autocommit=True):
         return open_connection(self._settings, APP_ACCOUNT, autocommit=autocommit)
 
+    def open_schema_connection(self):
+        """A second connection as the schema account, for a statement that
+        is meant to block (the control connection must stay usable)."""
+        return open_connection(self._settings, FAULT_ACCOUNT)
+
 
 def open_guarded_control_connection(settings):
     """Opens the schema account's connection and checks the lab marker.
@@ -80,8 +86,12 @@ def open_guarded_control_connection(settings):
 
 
 def restore_baseline_on_fresh_connection(settings):
+    """Restores the baseline. Callers hold the injector lock and have already
+    stopped their own fault, so any other session of the schema account is an
+    orphan from a dead injector and is ended first."""
     restore_connection = open_guarded_control_connection(settings)
     try:
+        end_orphaned_schema_sessions(restore_connection)
         return restore_baseline(restore_connection)
     finally:
         restore_connection.close()
@@ -133,12 +143,14 @@ def injected_fault(fault_id, settings=None, state_directory=None):
         records.record_injection_started(
             state_directory, injection_id=injection_id, fault_id=fault.fault_id,
             root_cause=fault.root_cause, started_at=started_at,
-            changes=fault.planned_changes,
+            changes=fault.planned_changes, expected_symptoms=fault.expected_symptoms,
         )
         try:
             fault.start(lab_access)
             yield {"injection_id": injection_id, "fault_id": fault.fault_id,
-                   "root_cause": fault.root_cause, "started_at": started_at,
+                   "root_cause": fault.root_cause,
+                   "expected_symptoms": list(fault.expected_symptoms),
+                   "started_at": started_at,
                    "changes": list(fault.planned_changes)}
         finally:
             try:

@@ -9,6 +9,7 @@ name: dbre-lab
 services:
   mysql:
     image: mysql:8.0.40
+    hostname: mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Copy .env.example to .env first}
       MYSQL_DATABASE: shop
@@ -23,6 +24,7 @@ services:
       - mysql-data:/var/lib/mysql
     ports:
       - "127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"
+      - "127.0.0.1:${MYSQL_ADMIN_HOST_PORT:-13307}:33062"
     # Fixed limits so fault behaviour and the healthy baseline are similar on
     # different machines.
     cpus: "1.0"

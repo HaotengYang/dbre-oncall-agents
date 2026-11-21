@@ -154,4 +154,23 @@ used and what it achieved.
   refused. The reviewer caught it; the proposal was corrected.
 - 2026-11-20: The owner asked for steps A2, A3 and A4 in one go. It took far
   longer than three 40-minute steps because of the review rounds above.
+- 2026-11-20: **Review capped at two rounds (owner's rule).** Step A5 was
+  reviewed twice. Round 1 found three defects, among them that the new
+  baseline gate read a stopped workload as healthy, the exact mistake the
+  owner's rule "a missing metric is evidence of an anomaly" forbids. Round 2
+  approved. Two leftover suspected findings went to `docs/KNOWN_ISSUES.md`
+  unfixed, as the rule says.
+- 2026-11-20: **Measure before explaining.** The owner asked whether the slow
+  latency recovery after a fault was real or a statistics lag. A direct query
+  timed every few seconds after the fault stopped settled it in two minutes:
+  the database recovers in under a second, the windowed percentile lags by its
+  window.
+- 2026-11-20: **A test of order that the cleanup would hide.** Stopping the
+  blocked-schema-change fault must cancel the waiting DDL before releasing the
+  transaction. Done in the wrong order the index is really built, but the
+  baseline restore removes it, so every end-state test still passed. The
+  reviewer saw this; a unit test with recording fakes now pins the order.
+- 2026-11-20: Claude's first fix for "do not end sessions that are not orphans"
+  was itself found too broad in round 1 and too narrow in round 2. The
+  narrower version was kept and the gap recorded.
 

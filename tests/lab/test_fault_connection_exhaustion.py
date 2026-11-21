@@ -7,7 +7,7 @@ import pymysql
 import pytest
 
 from tests.lab.conftest import fetch_value
-from tests.lab.fault_helpers import run_injector, start_fault, stop_fault, wait_until
+from tests.lab.fault_helpers import clear_and_wait_for_baseline, run_injector, start_fault, stop_fault, wait_until
 
 pytestmark = pytest.mark.lab
 
@@ -24,9 +24,9 @@ TOO_MANY_CONNECTIONS = 1040
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 def test_idle_flood_exhausts_connections_and_stop_frees_them(connect_as, lab_env):

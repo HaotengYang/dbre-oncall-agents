@@ -16,3 +16,11 @@ performance_schema_max_digest_length = 4096
 performance_schema_max_sql_text_length = 4096
 
 long_query_time = 1
+
+# A separate listener for administrative connections. It is not subject to
+# max_connections, so the diagnosis account can still get in when every normal
+# connection slot is taken. Only accounts with SERVICE_CONNECTION_ADMIN may
+# connect to it. MySQL does not accept a wildcard here; "mysql" is this
+# container's own hostname (set in docker-compose.yml).
+admin_address = mysql
+admin_port = 33062

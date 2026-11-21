@@ -151,3 +151,28 @@ definitions, and must not import anything from the `fault_injector` package.
 Only the eval runner reads injection records, and only to score. A test
 enforces this once the agents exist.
 
+### 2026-11-20: limit review rounds
+
+Background: the fault injector went through five review rounds in one sitting.
+
+1. For ordinary modules the reviewer reviews at most two rounds. After the
+   second round, remaining "suspected" findings are recorded in
+   `docs/KNOWN_ISSUES.md` and are not fixed.
+2. Exceptions, reviewed until the reviewer approves: the read-only evidence
+   collectors and the change safety gate.
+
+### 2026-11-20: diagnosis when connections are exhausted
+
+1. Two tiers. If the administrative port is reachable, the diagnosis account
+   connects there and investigates. If it is not, conclude only from outside
+   signals (connection refused, metrics interrupted) and answer `undetermined`
+   for what lies behind them.
+2. A metric that suddenly disappears is evidence of an anomaly. It must never
+   be read as "no anomaly". An eval case checks exactly this.
+
+### 2026-11-20: wait for the baseline, do not sleep
+
+After a fault ends, poll until the lab is healthy again before continuing,
+with a timeout. Tests and the eval runner share one gate for this
+(`lab_health`). Do not use fixed waiting times.
+

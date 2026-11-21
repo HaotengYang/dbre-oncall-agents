@@ -16,6 +16,10 @@ class Fault:
 
     fault_id = ""
     root_cause = ""
+    # Other anomalies this fault causes downstream of its root cause. A
+    # diagnosis that names one of these as the root cause has mistaken a
+    # symptom for the cause. Empty for a single-anomaly fault.
+    expected_symptoms = ()
     summary = ""
     planned_changes = ()
 

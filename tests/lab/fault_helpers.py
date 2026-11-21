@@ -1,16 +1,25 @@
 """Helpers for lab tests that run the fault injector as a real process."""
 
+import json
 import pathlib
 import signal
 import subprocess
 import sys
 import time
 
+from lab_health.lab_state import wait_for_lab_baseline
 from tests.lab.conftest import REPOSITORY_ROOT, fetch_all, fetch_value
 
 STATE_DIRECTORY = REPOSITORY_ROOT / "var"
 SHOP_TABLES = ("customers", "products", "orders", "order_items")
 INJECTOR_COMMAND = [sys.executable, "-m", "fault_injector"]
+
+
+def read_injection_events():
+    records_path = STATE_DIRECTORY / "injections.jsonl"
+    if not records_path.exists():
+        return []
+    return [json.loads(line) for line in records_path.read_text().splitlines()]
 
 
 def run_injector(*arguments):
@@ -68,6 +77,14 @@ def wait_until(condition, timeout_seconds, interval_seconds=1.0):
             return time.monotonic() - started_at
         time.sleep(interval_seconds)
     raise AssertionError(f"condition not met within {timeout_seconds} s")
+
+
+def clear_and_wait_for_baseline():
+    """Clears any fault and waits, through the shared gate, until the lab is
+    healthy. No fixed sleeps: the gate polls and gives up after its limit."""
+    cleared = run_injector("clear")
+    assert cleared.returncode == 0, cleared.stderr
+    return wait_for_lab_baseline(stable_seconds=3)
 
 
 def lab_looks_healthy(connection):

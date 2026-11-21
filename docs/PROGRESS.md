@@ -36,13 +36,15 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 - [x] A3. Lock wait: `lock_wait.long_transaction`
 - [x] A4. Connection exhaustion: `connection_exhaustion.idle_flood`. Owner's
       decision on how the diagnosis account connects is still open (see below)
-- [ ] A5. Several variants per class, plus cascading faults. The missing-index
-      class must include a variant that does not change the schema: a new query
-      on a column that never had an index (owner, 2026-11-20)
+- [x] A5. Two variants per class plus two cascading faults (scope set by the
+      owner, 2026-11-20): `missing_index.unindexed_query` (no schema change),
+      `lock_wait.blocked_schema_change`, `connection_exhaustion.gradual_leak`,
+      `cascade.lock_wait_exhausts_connections`,
+      `cascade.slow_query_exhausts_connections`
 
 ### B. Eval system
 
-- [ ] B1. Proposal: case format, ground truth, scoring
+- [x] B1. Proposal: `docs/proposals/B-evals.md`, awaiting owner confirmation
 - [ ] B2. Eval runner plus rule engine for one fault class; first report
 - [ ] B3. Rule engine covers all cases; baseline numbers; owner sets thresholds
 - [ ] B4. Evidence recording and replay
@@ -144,3 +146,41 @@ injector now stops when it sees a stop-request file.
 - A stop request reaches only a command-line injector. An injection run
   through the Python API ends with its with-block; `clear` from another
   process waits up to 60 s and then fails without changing anything.
+
+## Steps A5 and B1 (2026-11-20)
+
+Tests: 93 unit, 127 lab (the full lab suite takes about 16 minutes). Reviewed
+twice; round 2 approved. Leftover suspected findings are in
+`docs/KNOWN_ISSUES.md`.
+
+### Decisions carried out
+
+- **Admin port.** MySQL's administrative listener is on (host port 13307) and
+  `shop_diag` may connect to it. Measured during every exhaustion fault: the
+  normal port refuses, the admin port works. The two-tier rule is implemented
+  by the evidence collectors in step C1.
+- **Baseline gate.** `lab_health.wait_for_lab_baseline()` replaces fixed
+  sleeps. Signals: reachable, sessions under 30, no lock waits, no statement
+  over 1 s, exporter up, workload scraped and completing operations, no recent
+  workload errors; all stable for a few seconds; timeout 120 s.
+- **Is the slow latency recovery real?** No. Measured after stopping the
+  dropped-index fault: a direct query is back to 3 ms within 1 s; the 30 s
+  windowed p99 is still 235 ms at +20 s and 9 ms at +60 s. The lag is the
+  statistics window.
+
+### What each new fault looks like from inside (through the admin port)
+
+| Fault | After about 30 to 60 s |
+|---|---|
+| `missing_index.unindexed_query` | 6 extra sessions, each scanning all 400,000 rows of `order_items` per execution; schema identical to baseline |
+| `lock_wait.blocked_schema_change` | One `CREATE INDEX` and every workload statement on `orders`, reads included, in "Waiting for table metadata lock"; zero row-lock waits; only 3 extra sessions |
+| `connection_exhaustion.gradual_leak` | Sessions 16 at +10 s, 36 at +30 s, 60 at +60 s; all idle |
+| `cascade.lock_wait_exhausts_connections` | 60 sessions, 56 of them waiting on row locks held by one idle transaction |
+| `cascade.slow_query_exhausts_connections` | 60 sessions, about 50 running the same unindexed scan; no lock waits |
+
+### Open, for the owner
+
+- Step B1 asks five decisions; see the end of `docs/proposals/B-evals.md`.
+- `orders` is still 200,000 rows. With the faults now measured, the missing
+  index shows as rows examined (about 10 to 200,000) and a p99 of about 230 ms
+  for the affected query, not as a query over one second.

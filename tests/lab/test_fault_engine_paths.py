@@ -7,7 +7,7 @@ from fault_injector import engine, records
 from fault_injector.baseline import BASELINE_INDEXES, drop_index_sql
 from fault_injector.faults.base import Fault
 from tests.lab.conftest import fetch_all
-from tests.lab.fault_helpers import run_injector
+from tests.lab.fault_helpers import clear_and_wait_for_baseline, run_injector
 
 pytestmark = pytest.mark.lab
 
@@ -28,9 +28,9 @@ def lock_is_free(state_directory):
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 def test_exception_inside_the_block_still_restores_and_records(connect_as, tmp_path):

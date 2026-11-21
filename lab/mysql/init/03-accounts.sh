@@ -58,6 +58,9 @@ CREATE USER 'shop_diag'@'%' IDENTIFIED BY '${DIAG_DB_PASSWORD}';
 GRANT PROCESS ON *.* TO 'shop_diag'@'%';
 GRANT SELECT ON performance_schema.* TO 'shop_diag'@'%';
 GRANT SELECT ON shop.* TO 'shop_diag'@'%';
+-- May connect to the administrative port, which has no connection limit.
+-- Grants nothing else: no writes, no session control.
+GRANT SERVICE_CONNECTION_ADMIN ON *.* TO 'shop_diag'@'%';
 
 CREATE USER 'shop_exporter'@'%' IDENTIFIED BY '${EXPORTER_DB_PASSWORD}'
   WITH MAX_USER_CONNECTIONS 3;

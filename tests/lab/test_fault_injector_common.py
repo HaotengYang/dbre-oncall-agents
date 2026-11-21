@@ -9,8 +9,11 @@ import signal
 import pytest
 
 from fault_injector.registry import ROOT_CAUSE_LABELS, list_faults
+from lab_health.lab_state import wait_for_lab_baseline
 from tests.lab.conftest import fetch_value
 from tests.lab.fault_helpers import (
+    clear_and_wait_for_baseline,
+    read_injection_events,
     STATE_DIRECTORY,
     lab_looks_healthy,
     row_counts,
@@ -27,23 +30,19 @@ ALL_FAULT_IDS = [fault.fault_id for fault in list_faults()]
 RECOVERY_LIMIT_SECONDS = 60
 
 
-def read_events():
-    records_path = STATE_DIRECTORY / "injections.jsonl"
-    if not records_path.exists():
-        return []
-    return [json.loads(line) for line in records_path.read_text().splitlines()]
+read_events = read_injection_events
 
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 @pytest.mark.parametrize("fault_id", ALL_FAULT_IDS)
-def test_inject_then_stop_leaves_schema_and_data_unchanged(connect_as, fault_id):
-    diag_connection = connect_as("shop_diag")
+def test_inject_then_stop_leaves_schema_and_data_unchanged(observer_connection, fault_id):
+    diag_connection = observer_connection
     schema_before = schema_snapshot(diag_connection)
     counts_before = row_counts(diag_connection)
 
@@ -53,12 +52,12 @@ def test_inject_then_stop_leaves_schema_and_data_unchanged(connect_as, fault_id)
     assert exit_code == 0
     assert schema_snapshot(diag_connection) == schema_before
     assert row_counts(diag_connection) == counts_before
-    wait_until(lambda: lab_looks_healthy(diag_connection), RECOVERY_LIMIT_SECONDS)
+    wait_for_lab_baseline(stable_seconds=3, timeout_seconds=RECOVERY_LIMIT_SECONDS)
 
 
 @pytest.mark.parametrize("fault_id", ALL_FAULT_IDS)
-def test_killed_injector_is_cleaned_up_by_clear(connect_as, fault_id):
-    diag_connection = connect_as("shop_diag")
+def test_killed_injector_is_cleaned_up_by_clear(observer_connection, fault_id):
+    diag_connection = observer_connection
     schema_before = schema_snapshot(diag_connection)
     events_before = len(read_events())
 
@@ -74,7 +73,7 @@ def test_killed_injector_is_cleaned_up_by_clear(connect_as, fault_id):
 
     assert cleared.returncode == 0
     assert schema_snapshot(diag_connection) == schema_before
-    wait_until(lambda: lab_looks_healthy(diag_connection), RECOVERY_LIMIT_SECONDS)
+    wait_for_lab_baseline(stable_seconds=3, timeout_seconds=RECOVERY_LIMIT_SECONDS)
     new_events = read_events()[events_before:]
     assert [event["event"] for event in new_events] == ["started", "ended"]
     assert new_events[1]["ended_by"] == "clear"

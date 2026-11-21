@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from lab_health.lab_state import wait_for_lab_baseline
 from tests.lab.conftest import fetch_all, fetch_value
 
 pytestmark = pytest.mark.lab
@@ -72,19 +73,23 @@ def test_idle_baseline_is_healthy(prometheus_query, connect_as):
 
 
 def test_baseline_workload_latency_is_low(prometheus_query):
-    # Measure a window that starts inside this test. Fault tests that ran just
-    # before would otherwise still be inside the rate window and make a
-    # healthy lab look slow (seen: 0.167 s right after the injector tests).
-    quiet_window_seconds = 30
-    time.sleep(quiet_window_seconds + 10)
-    slowest_p99_seconds = single_value(
-        prometheus_query(
-            "max(histogram_quantile(0.99, sum by (le, operation) "
-            f"(rate(workload_operation_duration_seconds_bucket[{quiet_window_seconds}s]))))"
-        )
+    # Wait for the lab through the shared gate, then measure a window that
+    # lies entirely after it: windowed latency stays high until the window has
+    # rolled past whatever ran before (see docs/KNOWN_ISSUES.md).
+    wait_for_lab_baseline()
+    window_seconds = 45
+    time.sleep(window_seconds + 5)
+    latency_buckets = (
+        f"sum by (le) (rate(workload_operation_duration_seconds_bucket[{window_seconds}s]))"
     )
+    median_seconds = single_value(prometheus_query(f"histogram_quantile(0.5, {latency_buckets})"))
+    p99_seconds = single_value(prometheus_query(f"histogram_quantile(0.99, {latency_buckets})"))
 
-    assert slowest_p99_seconds < 0.1
+    # All statements together (about 900 samples), not per statement: p99 of
+    # one statement over a short window is one or two samples and one hiccup
+    # moves it. During the dropped-index fault p99 is about 0.23 s.
+    assert median_seconds < 0.01
+    assert p99_seconds < 0.1
 
 
 def test_table_lock_does_not_pile_up_workload_sessions(prometheus_query, connect_as):

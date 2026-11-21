@@ -6,7 +6,7 @@ import time
 import pytest
 
 from tests.lab.conftest import fetch_all, fetch_value
-from tests.lab.fault_helpers import run_injector, start_fault, stop_fault, wait_until
+from tests.lab.fault_helpers import clear_and_wait_for_baseline, run_injector, start_fault, stop_fault, wait_until
 
 pytestmark = pytest.mark.lab
 
@@ -19,9 +19,9 @@ LOCK_WAITS = "SELECT COUNT(*) FROM performance_schema.data_lock_waits"
 
 @pytest.fixture(autouse=True)
 def lab_at_baseline_before_and_after():
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
     yield
-    assert run_injector("clear").returncode == 0
+    clear_and_wait_for_baseline()
 
 
 def blocking_transactions(connection):
