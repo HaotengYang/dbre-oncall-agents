@@ -113,7 +113,8 @@ def main(argument_list=None):
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run cases and print the report")
     run.add_argument("--set", default="quick",
-                     help="'quick' (default), 'full', 'holdout', 'all' (full plus holdout), "
+                     help="'quick' (default), 'full', 'holdout', 'all' (full plus holdout; "
+                          "not judged against thresholds, use 'full' for that), "
                           "or a set in evals/sets.json")
     run.add_argument("--case", default=None,
                      help="run a single case by id (with --set holdout for a holdout case)")

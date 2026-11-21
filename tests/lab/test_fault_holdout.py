@@ -9,6 +9,7 @@ import pytest
 from tests.lab.conftest import fetch_all, fetch_value
 from tests.lab.fault_helpers import (
     clear_and_wait_for_baseline,
+    row_counts,
     schema_snapshot,
     start_fault,
     stop_fault,
@@ -43,10 +44,16 @@ def try_app_connection(lab_env):
 
 
 @pytest.fixture(autouse=True)
-def lab_at_baseline_before_and_after():
+def lab_at_baseline_before_and_after(connect_as):
     clear_and_wait_for_baseline()
+    observer = connect_as("shop_diag")
+    schema_before, counts_before = schema_snapshot(observer), row_counts(observer)
     yield
     clear_and_wait_for_baseline()
+    # Criterion 1, for every scenario: schema and data exactly as before.
+    observer = connect_as("shop_diag")
+    assert schema_snapshot(observer) == schema_before
+    assert row_counts(observer) == counts_before
 
 
 def test_h1_active_slow_calls_fill_connections_without_locks(observer_connection, lab_env):
@@ -60,14 +67,15 @@ def test_h1_active_slow_calls_fill_connections_without_locks(observer_connection
         )
         lock_waits = fetch_value(observer_connection,
                                  "SELECT COUNT(*) FROM performance_schema.data_lock_waits")
-        clear_requested_at = time.monotonic()
     finally:
+        stop_requested_at = time.monotonic()
         stop_fault(injector)
 
     assert sleeping_calls >= 40
     assert lock_waits == 0
+    # Criterion 5: under 10 connections within 15 s of the stop request.
     wait_until(lambda: fetch_value(observer_connection, SESSIONS) < 10, timeout_seconds=15)
-    assert time.monotonic() - clear_requested_at < 20
+    assert time.monotonic() - stop_requested_at <= 15
 
 
 def test_h4_unindexed_update_queues_writers_and_an_index_removes_the_queue(

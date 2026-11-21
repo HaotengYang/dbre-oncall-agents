@@ -394,16 +394,30 @@ def test_report_shows_holdout_apart_and_leaves_it_out_of_all_cases():
     from eval_runner.cli import load_holdout_cases
     from eval_runner.report import format_report
 
+    from eval_runner.report import results_as_json
+
     basic_case = next(c for c in ALL_CASES if c.tier == "basic" and c.kind == "single_fault")
-    holdout_case = load_holdout_cases()[0]
+    holdout_fault = next(c for c in load_holdout_cases() if c.case_id == "holdout-price-editor-lock")
+    holdout_healthy = next(c for c in load_holdout_cases()
+                           if c.case_id == "holdout-lookalike-bigger-pool")
     results = [
         CaseResult(basic_case, basic_case.expected_root_cause, (), "hit", None, None, 1.0, None),
-        CaseResult(holdout_case, "healthy", (), classify_outcome(holdout_case, "healthy"),
+        # A wrong answer on a holdout fault case and a false positive on a
+        # holdout healthy case: if holdout leaked into ALL CASES, both rates
+        # there would change.
+        CaseResult(holdout_fault, "healthy", (), classify_outcome(holdout_fault, "healthy"),
+                   None, None, 1.0, None),
+        CaseResult(holdout_healthy, "lock_wait", (), classify_outcome(holdout_healthy, "lock_wait"),
                    None, None, 1.0, None),
     ]
 
     text = format_report(results, "rule_engine")
 
     assert "HOLDOUT" in text
-    all_cases_section = text.split("ALL CASES (basic and hard)")[1]
-    assert "100.0% (1/1)" in all_cases_section.split("\n\n")[0]
+    all_cases_section = text.split("ALL CASES (basic and hard)")[1].split("\n\n")[0]
+    assert "100.0% (1/1)" in all_cases_section and "50.0%" not in all_cases_section
+    assert "n/a (0/0)" in all_cases_section  # no healthy case outside the holdout
+    summary = results_as_json(results, "rule_engine")["summary"]
+    assert summary["all"]["hit_rate"]["text"] == "100.0% (1/1)"
+    assert summary["holdout"]["hit_rate"]["text"] == "0.0% (0/1)"
+    assert summary["holdout"]["false_positive_rate"]["text"] == "100.0% (1/1)"
