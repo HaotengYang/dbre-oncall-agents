@@ -3,6 +3,10 @@
 Uses instantaneous signals only. Latency percentiles are computed over a time
 window and stay high until the window has rolled past a fault, long after the
 database itself has recovered, so they are not used here.
+
+What the gate is for: "has the lab recovered after a fault was cleared". It is
+not proof that no fault is active. A dropped index, or the first seconds of a
+gradual connection leak, do not trip any of these signals.
 """
 
 import time
@@ -29,6 +33,8 @@ class LabReading:
     long_statements: Optional[int]
     exporter_up: Optional[bool]
     recent_workload_errors: Optional[float]
+    workload_operations_per_second: Optional[float]
+    workload_scrape_up: Optional[bool]
 
 
 def unhealthy_reasons(lab_reading):
@@ -58,6 +64,16 @@ def unhealthy_reasons(lab_reading):
         reasons.append("workload error metric is missing")
     elif lab_reading.recent_workload_errors > 0:
         reasons.append(f"workload had {lab_reading.recent_workload_errors:.0f} recent errors")
+    # "No errors" proves nothing if the workload is not running at all: its
+    # error series would simply be absent. It must be seen doing work. The
+    # scrape status reacts within one scrape interval; the throughput rate
+    # only once its window has emptied, so both are checked.
+    if lab_reading.workload_scrape_up is not True:
+        reasons.append("workload metrics cannot be scraped or their status is missing")
+    if lab_reading.workload_operations_per_second is None:
+        reasons.append("workload throughput metric is missing")
+    elif lab_reading.workload_operations_per_second <= 0:
+        reasons.append("workload is completing no operations")
     return reasons
 
 

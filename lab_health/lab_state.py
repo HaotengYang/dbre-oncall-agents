@@ -46,6 +46,14 @@ def read_lab_state(environment=None):
         f'sum(increase(workload_operations_total{{outcome="error"}}[{WORKLOAD_ERROR_WINDOW}])) '
         "or vector(0)",
     )
+    # No "or vector(0)" here on purpose: if the workload is down this series
+    # is absent, and absent must stay None so the gate treats it as unhealthy.
+    workload_operations_per_second = _prometheus_value(
+        prometheus_url,
+        f'sum(rate(workload_operations_total{{outcome="ok"}}[{WORKLOAD_ERROR_WINDOW}]))',
+    )
+    workload_up_value = _prometheus_value(prometheus_url, 'up{job="workload"}')
+    workload_scrape_up = None if workload_up_value is None else workload_up_value == 1
     exporter_up = None if exporter_up_value is None else exporter_up_value == 1
 
     try:
@@ -55,7 +63,8 @@ def read_lab_state(environment=None):
             connect_timeout=5, read_timeout=10, autocommit=True,
         )
     except pymysql.MySQLError:
-        return LabReading(False, None, None, None, exporter_up, recent_workload_errors)
+        return LabReading(False, None, None, None, exporter_up, recent_workload_errors,
+                          workload_operations_per_second, workload_scrape_up)
     try:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -74,7 +83,8 @@ def read_lab_state(environment=None):
     finally:
         connection.close()
     return LabReading(True, connected_sessions, lock_waits, long_statements,
-                      exporter_up, recent_workload_errors)
+                      exporter_up, recent_workload_errors, workload_operations_per_second,
+                      workload_scrape_up)
 
 
 def wait_for_lab_baseline(**gate_options):

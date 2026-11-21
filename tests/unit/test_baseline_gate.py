@@ -12,7 +12,8 @@ from lab_health.baseline_gate import (
 
 HEALTHY = LabReading(
     database_reachable=True, connected_sessions=5, lock_waits=0, long_statements=0,
-    exporter_up=True, recent_workload_errors=0.0,
+    exporter_up=True, recent_workload_errors=0.0, workload_operations_per_second=20.0,
+    workload_scrape_up=True,
 )
 
 
@@ -52,7 +53,11 @@ def test_healthy_reading_has_no_reasons():
         ({"lock_waits": 2}, "2 lock waits"),
         ({"long_statements": 1}, "1 statement"),
         ({"exporter_up": False}, "exporter"),
-        ({"recent_workload_errors": 3.0}, "workload"),
+        ({"recent_workload_errors": 3.0}, "recent errors"),
+        ({"workload_operations_per_second": 0.0}, "completing no operations"),
+        ({"workload_operations_per_second": None}, "throughput metric is missing"),
+        ({"workload_scrape_up": False}, "cannot be scraped"),
+        ({"workload_scrape_up": None}, "cannot be scraped"),
     ],
 )
 def test_each_unhealthy_signal_is_named(changes, expected_fragment):

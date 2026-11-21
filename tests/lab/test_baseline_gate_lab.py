@@ -1,6 +1,8 @@
 """The shared gate against the real lab: passes when healthy, refuses during
 each kind of fault, and passes again after the fault is cleared."""
 
+import time
+
 import pytest
 
 from lab_health.baseline_gate import BaselineNotRestored
@@ -29,7 +31,9 @@ def test_healthy_lab_passes_quickly():
 @pytest.mark.parametrize(
     "fault_id, expected_reason",
     [
-        ("lock_wait.long_transaction", "lock waits"),
+        # At the instant the gate gives up, the blocked updates may all have
+        # just timed out, leaving their errors as the visible sign.
+        ("lock_wait.long_transaction", ("lock waits", "recent errors", "running over 1 s")),
         # Either the probe is refused, or it slips into a slot the exporter
         # just gave up and sees every slot taken. Both are "not healthy".
         ("connection_exhaustion.idle_flood", ("cannot connect", "sessions connected")),
@@ -46,3 +50,27 @@ def test_gate_refuses_during_a_fault_and_passes_after_it(fault_id, expected_reas
         stop_fault(injector)
 
     assert wait_for_lab_baseline(stable_seconds=3, timeout_seconds=60) < 60
+
+
+def test_gate_refuses_when_the_workload_is_not_running():
+    """A stopped workload reports no errors. The gate must not read that
+    silence as health: its metrics have disappeared."""
+    import subprocess
+
+    from tests.lab.conftest import REPOSITORY_ROOT
+
+    subprocess.run(["docker", "compose", "stop", "workload"], cwd=REPOSITORY_ROOT,
+                   check=True, capture_output=True)
+    try:
+        # Prometheus learns that a target is gone at its next scrape (every
+        # 5 s, with a 4 s timeout). Until then the last values still look
+        # fine, so the gate cannot notice any sooner than that.
+        time.sleep(12)
+        with pytest.raises(BaselineNotRestored) as raised:
+            wait_for_lab_baseline(stable_seconds=3, timeout_seconds=40)
+        assert "workload" in str(raised.value)
+    finally:
+        subprocess.run(["docker", "compose", "start", "workload"], cwd=REPOSITORY_ROOT,
+                       check=True, capture_output=True)
+
+    assert wait_for_lab_baseline(stable_seconds=3, timeout_seconds=90) < 90
