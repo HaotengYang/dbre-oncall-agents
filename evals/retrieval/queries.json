@@ -1,0 +1,98 @@
+[
+  {
+    "id": "q01",
+    "wording_mismatch": false,
+    "query": "A query on orders reads far more rows than it returns and EXPLAIN shows a full scan.",
+    "expected_runbook": "RB01"
+  },
+  {
+    "id": "q02",
+    "wording_mismatch": false,
+    "query": "Updates fail with lock wait timeout exceeded; one transaction holds many row locks.",
+    "expected_runbook": "RB02"
+  },
+  {
+    "id": "q03",
+    "wording_mismatch": false,
+    "query": "Every statement on orders is waiting for table metadata lock after an ALTER started.",
+    "expected_runbook": "RB03"
+  },
+  {
+    "id": "q04",
+    "wording_mismatch": false,
+    "query": "Connection count rising steadily, mostly idle connections, pool leak suspected.",
+    "expected_runbook": "RB04"
+  },
+  {
+    "id": "q05",
+    "wording_mismatch": false,
+    "query": "Too many connections error 1040, new connections refused.",
+    "expected_runbook": "RB05"
+  },
+  {
+    "id": "q06",
+    "wording_mismatch": false,
+    "query": "Deadlock found when trying to get lock, transaction rolled back.",
+    "expected_runbook": "RB06"
+  },
+  {
+    "id": "q07",
+    "wording_mismatch": false,
+    "query": "Disk space almost gone, no space left on device, binary logs growing.",
+    "expected_runbook": "RB07"
+  },
+  {
+    "id": "q08",
+    "wording_mismatch": false,
+    "query": "Replica lag growing, Seconds_Behind_Source keeps rising.",
+    "expected_runbook": "RB09"
+  },
+  {
+    "id": "m01",
+    "wording_mismatch": true,
+    "query": "Requests are piling up waiting for a database handle and the app times out.",
+    "expected_runbook": "RB05"
+  },
+  {
+    "id": "m02",
+    "wording_mismatch": true,
+    "query": "Customer order history pages became sluggish right after this morning's deploy.",
+    "expected_runbook": "RB01"
+  },
+  {
+    "id": "m03",
+    "wording_mismatch": true,
+    "query": "Saving an order status spins forever, but browsing orders is fine.",
+    "expected_runbook": "RB02"
+  },
+  {
+    "id": "m04",
+    "wording_mismatch": true,
+    "query": "The migration has been running for ten minutes and now the whole checkout hangs.",
+    "expected_runbook": "RB03"
+  },
+  {
+    "id": "m05",
+    "wording_mismatch": true,
+    "query": "Each new app instance we start eats more DB sessions and never gives them back.",
+    "expected_runbook": "RB04"
+  },
+  {
+    "id": "m06",
+    "wording_mismatch": true,
+    "query": "The database box is maxed out and everything is crawling.",
+    "expected_runbook": "RB08"
+  },
+  {
+    "id": "m07",
+    "wording_mismatch": true,
+    "query": "The copies we read prices from show yesterday's values.",
+    "expected_runbook": "RB09"
+  },
+  {
+    "id": "m08",
+    "wording_mismatch": true,
+    "query": "Somebody left a database session open in a desktop app since lunch and things keep getting slower.",
+    "expected_runbook": "RB10"
+  }
+]

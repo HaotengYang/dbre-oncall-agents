@@ -33,6 +33,7 @@ from diagnosis.agents.metrics_agent import investigate_metrics
 from diagnosis.agents.sql_agent import investigate_sql
 from diagnosis.contract import HEALTHY, UNDETERMINED, Diagnosis
 from diagnosis.evidence import collect_evidence
+from diagnosis.retrieval import recommend_steps
 from diagnosis.rules import decide
 
 MAX_ROUNDS = 3
@@ -86,6 +87,13 @@ def orchestrate(alert_text, access, collect=collect_evidence, sleep=time.sleep,
                 + " Undetermined: escalate to a human."
             ),
         )
+    # The SOP agent: handling steps quoted from the best-matching runbook.
+    # A missing or broken runbook must not lose a diagnosis that is settled.
+    try:
+        steps = recommend_steps(final, alert_text)
+    except Exception as retrieval_error:
+        steps = (f"(runbook retrieval failed: {type(retrieval_error).__name__})",)
+    final = dataclasses.replace(final, recommended_steps=steps)
     return DiagnosisReport(alert=alert_text, diagnosis=final, findings=findings,
                            rounds=tuple(round_verdicts))
 
@@ -171,7 +179,11 @@ def render_report_text(report):
                     f"({statement['rows_examined_per_execution']:.0f} rows per execution, "
                     f"explain: {statement['explain_status'] or 'not run'})"
                 )
-    lines += ["", "Recommended steps: (runbook retrieval arrives in step C5)"]
+    if diagnosis.recommended_steps:
+        lines += ["", "Recommended steps (quoted from the team's runbook):"]
+        lines += [f"  {number}. {step}" for number, step in enumerate(diagnosis.recommended_steps, 1)]
+    else:
+        lines += ["", "Recommended steps: none (no runbook for an undetermined or healthy result)"]
     return "\n".join(lines)
 
 
@@ -193,6 +205,7 @@ def report_as_dict(report):
             {"table": suggestion.table, "columns": list(suggestion.columns)} if suggestion else None
         ),
         "rounds_used": diagnosis.rounds_used,
+        "recommended_steps": list(diagnosis.recommended_steps),
         "rounds": [{"root_cause": r.root_cause, "rationale": r.rationale} for r in report.rounds],
         "findings": [
             {"agent": f.agent, "candidate": f.candidate, "symptoms": list(f.symptoms),

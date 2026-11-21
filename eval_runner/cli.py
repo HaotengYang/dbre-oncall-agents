@@ -174,6 +174,20 @@ def replay_command(arguments):
     return 0
 
 
+def retrieval_command(arguments):
+    from diagnosis.retrieval import KeywordRetriever
+    from eval_runner.retrieval_eval import (
+        evaluate_retriever,
+        format_retrieval_report,
+        load_retrieval_queries,
+    )
+
+    queries = load_retrieval_queries(EVALS_DIRECTORY / "retrieval" / "queries.json")
+    retriever = KeywordRetriever()
+    print(format_retrieval_report(retriever.name, evaluate_retriever(retriever, queries)))
+    return 0
+
+
 def report_command(arguments):
     latest_path = REPORTS_DIRECTORY / "latest.json"
     if not latest_path.exists():
@@ -211,10 +225,11 @@ def main(argument_list=None):
     replay_parser.add_argument("--repeats", type=int, default=5)
     replay_parser.add_argument("--max-calls", type=int, default=None,
                                help="stop after this many model calls (for cost calibration)")
+    commands.add_parser("retrieval", help="runbook retrieval hit rates (no lab needed)")
     arguments = parser.parse_args(argument_list)
     try:
         return {"run": run_command, "report": report_command, "record": record_command,
-                "replay": replay_command}[arguments.command](arguments)
+                "replay": replay_command, "retrieval": retrieval_command}[arguments.command](arguments)
     except (CaseError, ThresholdError, PreflightError) as problem:
         print(f"error: {problem}", file=sys.stderr)
         return EXIT_USAGE
