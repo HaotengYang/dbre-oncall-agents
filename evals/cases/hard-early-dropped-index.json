@@ -1,0 +1,23 @@
+{
+  "id": "hard-early-dropped-index",
+  "tier": "hard",
+  "kind": "incomplete_evidence",
+  "scenario": "missing_index.dropped_index",
+  "observe_seconds": 3,
+  "admin_port_available": true,
+  "alert": "Order history just got slow, seconds ago.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [
+      "undetermined"
+    ],
+    "symptoms": [],
+    "index": {
+      "table": "orders",
+      "columns": [
+        "customer_id",
+        "created_at"
+      ]
+    }
+  }
+}

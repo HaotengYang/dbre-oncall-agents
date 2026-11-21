@@ -1,0 +1,14 @@
+{
+  "id": "basic-healthy-quiet",
+  "tier": "basic",
+  "kind": "healthy",
+  "scenario": null,
+  "observe_seconds": 30,
+  "admin_port_available": true,
+  "alert": "Routine check before the release window: please confirm the orders database is fine.",
+  "expected": {
+    "root_cause": "healthy",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

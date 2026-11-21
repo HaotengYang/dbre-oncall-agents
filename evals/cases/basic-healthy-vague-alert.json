@@ -1,0 +1,14 @@
+{
+  "id": "basic-healthy-vague-alert",
+  "tier": "basic",
+  "kind": "healthy",
+  "scenario": null,
+  "observe_seconds": 30,
+  "admin_port_available": true,
+  "alert": "Users say the site feels slow. Is it the database?",
+  "expected": {
+    "root_cause": "healthy",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

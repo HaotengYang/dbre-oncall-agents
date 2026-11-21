@@ -1,0 +1,14 @@
+{
+  "id": "basic-blocked-schema-change",
+  "tier": "basic",
+  "kind": "single_fault",
+  "scenario": "lock_wait.blocked_schema_change",
+  "observe_seconds": 30,
+  "admin_port_available": true,
+  "alert": "Everything that touches orders hangs, even simple reads. It started about a minute ago.",
+  "expected": {
+    "root_cause": "lock_wait",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "hard-cascade-lock-wait",
+  "tier": "hard",
+  "kind": "cascade",
+  "scenario": "cascade.lock_wait_exhausts_connections",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "Checkout is timing out and the app reports it cannot get a database connection.",
+  "expected": {
+    "root_cause": "lock_wait",
+    "also_acceptable": [],
+    "symptoms": [
+      "connection_exhaustion"
+    ]
+  }
+}

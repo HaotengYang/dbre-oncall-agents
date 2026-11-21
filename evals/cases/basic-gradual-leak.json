@@ -1,0 +1,14 @@
+{
+  "id": "basic-gradual-leak",
+  "tier": "basic",
+  "kind": "single_fault",
+  "scenario": "connection_exhaustion.gradual_leak",
+  "observe_seconds": 75,
+  "admin_port_available": true,
+  "alert": "We see 'could not connect to database' errors now and then, more often over the last minute.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

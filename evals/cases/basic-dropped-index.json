@@ -1,0 +1,21 @@
+{
+  "id": "basic-dropped-index",
+  "tier": "basic",
+  "kind": "single_fault",
+  "scenario": "missing_index.dropped_index",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "Customer order history pages have become slow over the last few minutes.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [],
+    "symptoms": [],
+    "index": {
+      "table": "orders",
+      "columns": [
+        "customer_id",
+        "created_at"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "hard-lookalike-high-load",
+  "tier": "hard",
+  "kind": "healthy_lookalike",
+  "scenario": "healthy.high_load",
+  "observe_seconds": 60,
+  "admin_port_available": true,
+  "alert": "Traffic is three times normal after the marketing email. Is the database in trouble?",
+  "expected": {
+    "root_cause": "healthy",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

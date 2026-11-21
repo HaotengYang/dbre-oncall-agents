@@ -1,0 +1,14 @@
+{
+  "id": "basic-idle-flood",
+  "tier": "basic",
+  "kind": "single_fault",
+  "scenario": "connection_exhaustion.idle_flood",
+  "observe_seconds": 20,
+  "admin_port_available": true,
+  "alert": "New application instances fail to start because they cannot get a database connection.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}
