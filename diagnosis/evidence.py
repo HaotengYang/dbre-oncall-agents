@@ -1,11 +1,19 @@
-"""A read-only snapshot of the lab for the baseline rule engine.
+"""Read-only evidence collection.
 
-Every statement sent to MySQL here is a fixed SELECT on performance_schema or
-information_schema. Nothing captured from the server is ever executed, and no
-EXPLAIN is run; that belongs to the evidence collectors of step C1.
+Every statement sent to MySQL from this module is a fixed SELECT on
+performance_schema or information_schema. The one exception is a plain EXPLAIN
+of a captured statement, which goes through diagnosis.explain and its
+allowlist. Captured statement text is untrusted: it is stored as data, shown
+in reports, and never executed as it stands.
+
+Counts that flicker, such as how many sessions are waiting on a lock, are
+sampled several times across the observation window rather than read once.
+A single read made one eval case answer differently from run to run.
 """
 
+import dataclasses
 import datetime
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -13,11 +21,19 @@ from typing import Optional
 import pymysql
 import requests
 
+from diagnosis.explain import ExplainResult, explain_statement
+
 CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = 15
 PROMETHEUS_TIMEOUT_SECONDS = 5
 ONSET_LOOKBACK_SECONDS = 600
 ONSET_STEP_SECONDS = 5
+# How many times session and lock counts are read across the window.
+SESSION_SAMPLE_COUNT = 6
+# How many of the heaviest statements are explained.
+STATEMENTS_TO_EXPLAIN = 3
+# A statement is worth explaining if it used no index or reads many rows.
+ROWS_PER_EXECUTION_WORTH_EXPLAINING = 1_000
 
 
 @dataclass(frozen=True)
@@ -25,7 +41,11 @@ class StatementLoad:
     """What one statement shape did during the observation window."""
 
     digest_text: str
+    # Untrusted: a real statement as sent by some client.
     sample_text: Optional[str]
+    schema_name: Optional[str]
+    sample_truncated: bool
+    explain: Optional[ExplainResult]
     executions: int
     executions_per_second: float
     rows_examined_per_execution: float
@@ -35,15 +55,43 @@ class StatementLoad:
 
 
 @dataclass(frozen=True)
+class SessionSample:
+    """One instantaneous read of session and lock counts."""
+
+    total: int
+    idle: int
+    executing: int
+    metadata_lock_waiters: int
+    row_lock_waiters: int
+    # (transaction id, rows locked, holder is idle)
+    blocking_transactions: tuple
+
+
+@dataclass(frozen=True)
 class SessionEvidence:
+    """Session and lock counts over the observation window.
+
+    total, idle and running are medians over the samples. The two waiter
+    counts are the level that was sustained: the number reached or exceeded in
+    at least two of the samples. A blocked session leaves the count while it
+    times out and reconnects, so a single read can show one waiter where the
+    window shows four; and a single read can also catch a momentary collision
+    that means nothing. Two samples agreeing rules out both.
+    """
+
     total: int
     max_connections: int
     idle: int
     running: int  # executing a statement and not waiting for any lock
     metadata_lock_waiters: int
     row_lock_waiters: int
-    # (rows locked, holder is idle) for each transaction others are waiting on
+    # (rows locked, holder is idle) for each transaction others waited on
     blocking_transactions: tuple
+    sample_count: int = 1
+    # The most sessions seen waiting on any lock in a single sample. A wait
+    # that shows in only one sample is not sustained, so it names no fault,
+    # but it happened: it must not be reported as "nobody is waiting".
+    lock_waiters_peak: int = 0
 
 
 @dataclass(frozen=True)
@@ -106,6 +154,12 @@ def collect_metrics(prometheus_url):
         missing.append("mysql_up")
     if connections_now is None:
         missing.append("mysql_global_status_threads_connected")
+    connections_change_per_second = _prometheus_value(
+        prometheus_url, "deriv(mysql_global_status_threads_connected[1m])"
+    )
+    if connections_change_per_second is None:
+        # Without a trend, "not climbing" cannot be claimed.
+        missing.append("connection trend over the last minute")
     return MetricsEvidence(
         exporter_reaches_mysql=None if exporter_value is None else exporter_value == 1,
         connections_now=connections_now,
@@ -115,9 +169,7 @@ def collect_metrics(prometheus_url):
         max_connections=_prometheus_value(
             prometheus_url, "last_over_time(mysql_global_variables_max_connections[5m])"
         ),
-        connections_change_per_second=_prometheus_value(
-            prometheus_url, "deriv(mysql_global_status_threads_connected[1m])"
-        ),
+        connections_change_per_second=connections_change_per_second,
         missing=tuple(missing),
     )
 
@@ -224,7 +276,7 @@ SESSION_FILTER = (
 )
 
 
-def collect_sessions(connection):
+def read_session_sample(connection):
     def count_sessions(extra_condition):
         return int(_fetch_value(
             connection,
@@ -232,12 +284,6 @@ def collect_sessions(connection):
             f"WHERE {SESSION_FILTER} AND {extra_condition}",
         ))
 
-    metadata_lock_waiters = count_sessions("STATE = 'Waiting for table metadata lock'")
-    row_lock_waiters = int(_fetch_value(
-        connection,
-        "SELECT COUNT(DISTINCT REQUESTING_THREAD_ID) FROM performance_schema.data_lock_waits",
-    ))
-    executing = count_sessions("COMMAND = 'Query'")
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT DISTINCT blocking_trx.trx_id, blocking_trx.trx_rows_locked, session.COMMAND "
@@ -248,16 +294,55 @@ def collect_sessions(connection):
             "  ON session.ID = blocking_trx.trx_mysql_thread_id"
         )
         blocking_transactions = tuple(
-            (int(rows_locked), command == "Sleep") for _, rows_locked, command in cursor.fetchall()
+            (int(transaction_id), int(rows_locked), command == "Sleep")
+            for transaction_id, rows_locked, command in cursor.fetchall()
         )
-    return SessionEvidence(
+    return SessionSample(
         total=count_sessions("1 = 1"),
-        max_connections=int(_fetch_value(connection, "SELECT @@global.max_connections")),
         idle=count_sessions("COMMAND = 'Sleep'"),
-        running=max(0, executing - metadata_lock_waiters - row_lock_waiters),
-        metadata_lock_waiters=metadata_lock_waiters,
-        row_lock_waiters=row_lock_waiters,
+        executing=count_sessions("COMMAND = 'Query'"),
+        metadata_lock_waiters=count_sessions("STATE = 'Waiting for table metadata lock'"),
+        row_lock_waiters=int(_fetch_value(
+            connection,
+            "SELECT COUNT(DISTINCT REQUESTING_THREAD_ID) FROM performance_schema.data_lock_waits",
+        )),
         blocking_transactions=blocking_transactions,
+    )
+
+
+def sustained_level(values):
+    """The level reached or exceeded in at least two of the values: the
+    second highest. With a single value, that value."""
+    ordered = sorted(values, reverse=True)
+    return ordered[1] if len(ordered) > 1 else ordered[0]
+
+
+def combine_session_samples(samples, max_connections):
+    """Folds several instantaneous reads into one SessionEvidence."""
+    if not samples:
+        raise ValueError("at least one session sample is needed")
+    blockers = {}
+    for sample in samples:
+        for transaction_id, rows_locked, holder_is_idle in sample.blocking_transactions:
+            known_rows, known_idle = blockers.get(transaction_id, (0, False))
+            blockers[transaction_id] = (max(known_rows, rows_locked), known_idle or holder_is_idle)
+    return SessionEvidence(
+        total=round(statistics.median(sample.total for sample in samples)),
+        max_connections=max_connections,
+        idle=round(statistics.median(sample.idle for sample in samples)),
+        running=round(statistics.median(
+            max(0, sample.executing - sample.metadata_lock_waiters - sample.row_lock_waiters)
+            for sample in samples
+        )),
+        metadata_lock_waiters=sustained_level(
+            [sample.metadata_lock_waiters for sample in samples]
+        ),
+        row_lock_waiters=sustained_level([sample.row_lock_waiters for sample in samples]),
+        blocking_transactions=tuple(sorted(blockers.values(), reverse=True)),
+        sample_count=len(samples),
+        lock_waiters_peak=max(
+            sample.row_lock_waiters + sample.metadata_lock_waiters for sample in samples
+        ),
     )
 
 
@@ -267,18 +352,22 @@ def _digest_snapshot(connection):
         # the server's own schemas are this tool's and the exporter's.
         cursor.execute(
             "SELECT DIGEST, DIGEST_TEXT, QUERY_SAMPLE_TEXT, COUNT_STAR, SUM_ROWS_EXAMINED, "
-            "SUM_NO_INDEX_USED, SUM_TIMER_WAIT "
+            "SUM_NO_INDEX_USED, SUM_TIMER_WAIT, SCHEMA_NAME "
             "FROM performance_schema.events_statements_summary_by_digest "
             "WHERE COUNT_STAR > 0 AND DIGEST IS NOT NULL "
             "AND DIGEST_TEXT NOT LIKE '%performance_schema%' "
             "AND DIGEST_TEXT NOT LIKE '%information_schema%' "
             "AND DIGEST_TEXT NOT LIKE 'SHOW %' AND DIGEST_TEXT NOT LIKE 'SET %'"
         )
-        return {row[0]: row for row in cursor.fetchall()}
+        return {(row[7], row[0]): row for row in cursor.fetchall()}
 
 
-def statement_loads(before, after, window_seconds):
-    """Per-statement activity between two digest snapshots, busiest first."""
+def statement_loads(before, after, window_seconds, max_sample_length=None):
+    """Per-statement activity between two digest snapshots, busiest first.
+
+    max_sample_length is the server's limit on stored statement text; a sample
+    at that length was cut off.
+    """
     loads = []
     for digest, after_row in after.items():
         before_row = before.get(digest)
@@ -291,6 +380,13 @@ def statement_loads(before, after, window_seconds):
         loads.append(StatementLoad(
             digest_text=after_row[1],
             sample_text=after_row[2],
+            schema_name=after_row[7],
+            sample_truncated=(
+                after_row[2] is not None and max_sample_length is not None
+                # The server's limit is in bytes, not characters.
+                and len(after_row[2].encode("utf-8")) >= max_sample_length - 1
+            ),
+            explain=None,
             executions=executions,
             executions_per_second=executions / window_seconds,
             rows_examined_per_execution=rows_examined / executions,
@@ -301,25 +397,61 @@ def statement_loads(before, after, window_seconds):
     return tuple(sorted(loads, key=lambda load: load.rows_examined_per_second, reverse=True))
 
 
+def explain_heaviest_statements(statements, open_connection):
+    """Returns the statements with an EXPLAIN result attached to the heaviest
+    few that used no index or read many rows. Order is kept."""
+    worth_explaining = [
+        load for load in statements
+        if load.no_index_used or load.rows_examined_per_execution >= ROWS_PER_EXECUTION_WORTH_EXPLAINING
+    ][:STATEMENTS_TO_EXPLAIN]
+    explained = {
+        id(load): explain_statement(open_connection, load.sample_text, load.schema_name,
+                                    truncated=load.sample_truncated)
+        for load in worth_explaining
+    }
+    return tuple(
+        dataclasses.replace(load, explain=explained[id(load)]) if id(load) in explained else load
+        for load in statements
+    )
+
+
 def collect_evidence(access, window_seconds=5):
-    """Takes one snapshot of the lab. Takes a little over window_seconds."""
+    """Collects evidence over one window. Takes a little over window_seconds."""
     metrics = collect_metrics(access.prometheus_url)
     connection, path, normal_error_code, admin_tried, admin_error_code = (
         open_diagnosis_connection(access)
     )
     sessions, statements = None, ()
     if connection is not None:
+        port_in_use = access.mysql_admin_port if path == "admin" else access.mysql_port
+
+        def open_explain_connection(database, read_timeout):
+            return pymysql.connect(
+                host=access.mysql_host, port=port_in_use, user=access.mysql_user,
+                password=access.mysql_password, database=database, autocommit=True,
+                connect_timeout=CONNECT_TIMEOUT_SECONDS, read_timeout=read_timeout,
+            )
+
         try:
+            max_connections = int(_fetch_value(connection, "SELECT @@global.max_connections"))
+            max_sample_length = int(_fetch_value(
+                connection, "SELECT @@global.performance_schema_max_sql_text_length"
+            ))
             digests_before = _digest_snapshot(connection)
             started_at = time.monotonic()
-            time.sleep(window_seconds)
+            session_samples = []
+            for sample_number in range(SESSION_SAMPLE_COUNT):
+                session_samples.append(read_session_sample(connection))
+                if sample_number < SESSION_SAMPLE_COUNT - 1:
+                    time.sleep(window_seconds / (SESSION_SAMPLE_COUNT - 1))
             digests_after = _digest_snapshot(connection)
             statements = statement_loads(
-                digests_before, digests_after, time.monotonic() - started_at
+                digests_before, digests_after, time.monotonic() - started_at, max_sample_length
             )
-            sessions = collect_sessions(connection)
+            sessions = combine_session_samples(session_samples, max_connections)
         finally:
             connection.close()
+        statements = explain_heaviest_statements(statements, open_explain_connection)
     return Evidence(
         connection_path=path,
         normal_port_error_code=normal_error_code,
