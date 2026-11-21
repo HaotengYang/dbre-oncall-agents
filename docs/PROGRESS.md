@@ -61,8 +61,8 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 - [x] C3. Orchestrator, report and `python -m diagnosis` CLI. Reviewed twice
 - [ ] C4. Connect the LLM; owner approves model list and budget first; then
       multi-model comparison
-- [ ] C5. SOP retrieval: ten runbooks, keyword retrieval first (owner, 2026-11-21);
-      vector only if time remains
+- [x] C5. SOP retrieval: ten runbooks, keyword retrieval (BM25). Rank-1 hits:
+      8/8 for matching wording, 3/8 for reworded alerts. Vector deferred
 - [~] C6. Inspection agent: CUT FOR TIME (owner, 2026-11-21). The deadline is
       Monday; the owner chose the holdout set, the model comparison and keyword
       retrieval over a scheduled inspection agent, which no eval case measures
@@ -382,4 +382,32 @@ symptom; the CLI's JSON report on a healthy lab).
 - The orchestrator's refusal of "healthy" with missing metrics is accepted; the
   report must say that the orchestrator and the rule engine differ there.
 - C6 inspection agent cut for time.
+
+## Holdout set and the rule-engine run on full plus holdout (2026-11-21)
+
+Rule engine, end to end, one run per case (`--set all`):
+
+| Tier | Hit rate | False positives | Other |
+|---|---|---|---|
+| Basic | 100.0% (6/6) | 0.0% (0/2) | index suggestion 2/2 |
+| Hard | 62.5% (5/8) | 0.0% (0/2) | symptom as cause 0/2; 2 acceptable undetermined; 1 miss |
+| Holdout | 33.3% (1/3) | 0.0% (0/1) | symptom as cause 1/1; index suggestion 0/1 |
+
+Hard-tier miss: `hard-early-long-transaction` answered `healthy` three
+seconds into the fault, before any blocked update had been caught waiting.
+The hard tier sits exactly at its threshold of 5/8.
+
+Holdout, case by case:
+
+| Case | Expected | Rule engine | Outcome |
+|---|---|---|---|
+| holdout-stuck-active-sessions | connection_exhaustion | undetermined | acceptable |
+| holdout-unindexed-update-customers | missing_index_slow_query (symptom lock_wait) | lock_wait | symptom as cause |
+| holdout-price-editor-lock | lock_wait | lock_wait | hit |
+| holdout-lookalike-bigger-pool | healthy | undetermined | undetermined on healthy |
+
+The gap between the basic tier (written by the rules' author) and the holdout
+set is what the owner predicted. The rule engine is frozen and was not changed.
+
+The four holdout scenarios also pass the injector's common lab tests (20 of 20).
 
