@@ -57,7 +57,7 @@ def _append_event(state_directory, event):
 
 
 def record_injection_started(state_directory, injection_id, fault_id, root_cause,
-                             started_at, changes):
+                             started_at, changes, expected_symptoms=()):
     _append_event(
         state_directory,
         {
@@ -65,6 +65,7 @@ def record_injection_started(state_directory, injection_id, fault_id, root_cause
             "injection_id": injection_id,
             "fault_id": fault_id,
             "root_cause": root_cause,
+            "expected_symptoms": list(expected_symptoms),
             "started_at": started_at,
             "changes": list(changes),
         },

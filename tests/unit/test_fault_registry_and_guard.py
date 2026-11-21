@@ -27,6 +27,38 @@ def test_every_fault_uses_a_root_cause_label_from_the_design():
         assert fault.root_cause in ROOT_CAUSE_LABELS, fault.fault_id
 
 
+def test_expected_symptoms_are_labels_other_than_the_root_cause():
+    for fault in list_faults():
+        assert set(fault.expected_symptoms) <= ROOT_CAUSE_LABELS, fault.fault_id
+        assert fault.root_cause not in fault.expected_symptoms, fault.fault_id
+
+
+def test_cascading_faults_name_connection_exhaustion_as_a_symptom_not_the_cause():
+    cascades = [fault for fault in list_faults() if fault.fault_id.startswith("cascade.")]
+
+    assert len(cascades) == 2
+    assert {fault.root_cause for fault in cascades} == {"lock_wait", "missing_index_slow_query"}
+    for fault in cascades:
+        assert fault.expected_symptoms == ("connection_exhaustion",)
+
+
+def test_each_class_has_two_or_three_variants():
+    variants_per_class = {}
+    for fault in list_faults():
+        fault_class = fault.fault_id.split(".")[0]
+        variants_per_class[fault_class] = variants_per_class.get(fault_class, 0) + 1
+
+    assert variants_per_class == {
+        "missing_index": 2, "lock_wait": 2, "connection_exhaustion": 2, "cascade": 2,
+    }
+
+
+def test_every_fault_describes_what_it_changes():
+    for fault in list_faults():
+        assert fault.planned_changes and all(fault.planned_changes), fault.fault_id
+        assert fault.summary, fault.fault_id
+
+
 def test_unknown_fault_id_is_rejected_with_the_available_ids():
     with pytest.raises(KeyError, match="missing_index.dropped_index"):
         find_fault("no_such.fault")

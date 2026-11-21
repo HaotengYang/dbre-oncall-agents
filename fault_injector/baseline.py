@@ -10,6 +10,9 @@ exist, which is the answer to a missing-index fault.
 from dataclasses import dataclass
 
 SCHEMA_NAME = "shop"
+# Indexes the injector itself creates carry this prefix, so the restore can
+# remove them without touching anything else.
+INJECTOR_INDEX_PREFIX = "idx_fault_"
 DDL_LOCK_WAIT_TIMEOUT_SECONDS = 30
 
 
@@ -78,11 +81,44 @@ def drop_index_sql(definition):
     return f"DROP INDEX {definition.name} ON {SCHEMA_NAME}.{definition.table}"
 
 
+def end_orphaned_schema_sessions(connection, wait_seconds=10):
+    """Ends other sessions of the schema account and waits until they are gone.
+
+    Call only while holding the injector lock, when no injector can be
+    running: any such session then belongs to an injector that died, and may
+    be a schema change that is still waiting or building. Ended first, it
+    cannot create an index after the baseline has been restored. An account
+    may always end its own sessions; no extra privilege is involved.
+    """
+    import time
+
+    def other_session_ids():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ID FROM information_schema.PROCESSLIST "
+                "WHERE USER = SUBSTRING_INDEX(CURRENT_USER(), '@', 1) AND ID <> CONNECTION_ID()"
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    ended_session_ids = other_session_ids()
+    with connection.cursor() as cursor:
+        for session_id in ended_session_ids:
+            try:
+                cursor.execute(f"KILL {int(session_id)}")
+            except Exception:
+                pass  # it ended by itself in the meantime
+    deadline = time.monotonic() + wait_seconds
+    while other_session_ids() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return ended_session_ids
+
+
 def restore_baseline(connection):
     """Recreates every baseline index that is missing. Returns their names.
 
-    An index with a baseline name but the wrong columns is dropped first.
-    Other unexpected indexes are left alone: they are not the injector's.
+    An index with a baseline name but the wrong columns is dropped first, and
+    so is any index the injector created (INJECTOR_INDEX_PREFIX). Other
+    unexpected indexes are left alone: they are not the injector's.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -93,7 +129,8 @@ def restore_baseline(connection):
     restored_names = []
     with connection.cursor() as cursor:
         for unexpected in find_unexpected_indexes(live_indexes):
-            if (unexpected.table, unexpected.name) in baseline_names:
+            is_injector_owned = unexpected.name.startswith(INJECTOR_INDEX_PREFIX)
+            if is_injector_owned or (unexpected.table, unexpected.name) in baseline_names:
                 cursor.execute(drop_index_sql(unexpected))
         for missing in find_missing_indexes(live_indexes):
             cursor.execute(create_index_sql(missing))
