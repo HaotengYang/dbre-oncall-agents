@@ -188,9 +188,16 @@ def test_no_statements_gives_an_empty_list():
     assert investigate_sql(evidence(statements=[])).details["top_statements"] == []
 
 
-@pytest.mark.parametrize("admin_tried", [False, True])
-def test_without_a_connection_nothing_from_inside_is_claimed(admin_tried):
-    unreachable = evidence(sessions=None, statements=(), path="none", normal_error=1040,
+@pytest.mark.parametrize(
+    "admin_tried, normal_error, expected_symptoms",
+    [(False, 1040, ("connection_exhaustion",)), (True, 1040, ("connection_exhaustion",)),
+     (False, 2003, ())],
+)
+def test_without_a_connection_nothing_from_inside_is_claimed(admin_tried, normal_error,
+                                                             expected_symptoms):
+    # A 1040 refusal is an outside sign of exhaustion, as the rule engine also
+    # reports; an unreachable server (2003) is not.
+    unreachable = evidence(sessions=None, statements=(), path="none", normal_error=normal_error,
                            admin_tried=admin_tried, admin_error=1040 if admin_tried else None)
 
     finding = investigate_sql(unreachable)
@@ -198,7 +205,7 @@ def test_without_a_connection_nothing_from_inside_is_claimed(admin_tried):
     assert finding.agent == "sql"
     assert finding.candidate is None
     assert finding.facts == ()
-    assert finding.symptoms == ()
+    assert finding.symptoms == expected_symptoms
     assert finding.index_suggestion is None
     assert finding.details == {"blocking_transactions": [], "top_statements": [],
                                "connection_path": "none", "sessions": None}

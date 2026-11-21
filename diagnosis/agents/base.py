@@ -19,10 +19,12 @@ class AgentFinding:
     candidate: Optional[str]
     # Anomalies this agent sees that it judges to be consequences.
     symptoms: tuple
-    # Plain language: what the agent concluded and why.
+    # Plain language: what the agent concluded and why. May name tables and
+    # columns taken from captured SQL. Can be empty when nothing is named.
     rationale: str
-    # Observations the conclusion rests on. May quote captured SQL, which is
-    # untrusted (see diagnosis.untrusted).
+    # Observations the conclusion rests on. May quote captured SQL.
+    # rationale, facts, details and index_suggestion are all untrusted as far
+    # as a model prompt is concerned: fence them with diagnosis.untrusted.
     facts: tuple
     # Things that look off but do not name a cause.
     weak_signals: tuple

@@ -192,7 +192,10 @@ def test_missing_metrics_are_a_sign_of_trouble_never_of_health(shape_name):
     assert "metrics_missing" in finding.details["anomaly_types"]
     assert "nothing abnormal" not in rationale
     assert "missing" in rationale and "sign of trouble" in rationale
-    assert finding.details["missing_metrics"] == list(metrics_evidence.missing)
+    # Everything the collector listed, plus anything this agent found missing.
+    assert finding.details["missing_metrics"][: len(metrics_evidence.missing)] == list(
+        metrics_evidence.missing
+    )
     for missing_name in metrics_evidence.missing:
         assert any(missing_name in fact for fact in finding.facts)
 
@@ -233,3 +236,40 @@ def test_refused_port_fact_names_the_error_code():
     finding = investigate_metrics(snapshot(normal_error=1040))
 
     assert any("1040" in fact for fact in finding.facts)
+
+
+
+@pytest.mark.parametrize(
+    "changes, missing_name",
+    [({"max_connections": None}, "max_connections"),
+     ({"max_connections": 0.0}, "max_connections"),
+     ({"connections_now": None, "connections_last_known": None}, "connection count")],
+)
+def test_values_needed_for_the_limit_are_never_read_as_health(changes, missing_name):
+    from diagnosis.evidence import Evidence, MetricsEvidence
+
+    metrics = MetricsEvidence(**{**dict(exporter_reaches_mysql=True, connections_now=5.0,
+                                        connections_last_known=5.0, max_connections=60.0,
+                                        connections_change_per_second=0.0, missing=()),
+                                 **changes})
+
+    finding = investigate_metrics(Evidence("normal", None, False, None, metrics, None, (), None))
+
+    assert "metrics_missing" in finding.details["anomaly_types"]
+    assert "connections_near_limit" not in finding.details["anomaly_types"]
+    assert "nothing abnormal" not in finding.rationale.lower()
+    assert "well under the limit" not in finding.rationale
+    assert missing_name in finding.rationale and "sign of trouble" in finding.rationale
+    assert any(missing_name in name for name in finding.details["missing_metrics"])
+
+
+def test_an_unreachable_server_is_not_described_as_full():
+    from diagnosis.evidence import Evidence, MetricsEvidence
+
+    metrics = MetricsEvidence(True, 5.0, 5.0, 60.0, 0.0, ())
+
+    unreachable = investigate_metrics(Evidence("none", 2003, False, None, metrics, None, (), None))
+    full = investigate_metrics(Evidence("none", 1040, False, None, metrics, None, (), None))
+
+    assert "full" not in unreachable.rationale and "2003" in unreachable.rationale
+    assert "because the server is full" in full.rationale

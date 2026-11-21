@@ -6,6 +6,11 @@ stands: candidate, symptoms, rationale, facts, index_suggestion and
 weak_signals are copied from it unchanged, so this agent's verdict always
 equals the rule engine's SQL verdict. No threshold is repeated here.
 
+Untrusted content: facts, rationale and index_suggestion can contain table
+and column names taken from captured SQL (the index suggestion is parsed
+from a client's statement). They are fine to show a human, and must go
+through diagnosis.untrusted before reaching a model prompt.
+
 Without a database connection (evidence.sessions is None) nothing inside can
 be judged. The finding then names no candidate, states no facts from inside,
 and carries one weak signal saying the database could not be inspected.
@@ -29,10 +34,12 @@ details keys:
 """
 
 from diagnosis.agents.base import AgentFinding
+from diagnosis.contract import CONNECTION_EXHAUSTION
 from diagnosis.explain import EXPLAINED
 from diagnosis.rules import assess_sql
 
 AGENT_NAME = "sql"
+TOO_MANY_CONNECTIONS_ERROR = 1040
 TOP_STATEMENT_COUNT = 3
 DIGEST_TEXT_LIMIT = 200
 
@@ -71,8 +78,14 @@ def _not_inspectable(evidence):
     if evidence.normal_port_error_code is not None:
         how += f" (normal port error {evidence.normal_port_error_code})"
     signal = f"the database could not be inspected from inside: {how}"
+    # A refusal with "too many connections" is an outside observation, not a
+    # fact from inside, and it is what the rule engine also reports.
+    symptoms = (
+        (CONNECTION_EXHAUSTION,)
+        if evidence.normal_port_error_code == TOO_MANY_CONNECTIONS_ERROR else ()
+    )
     return AgentFinding(
-        agent=AGENT_NAME, candidate=None, symptoms=(), facts=(), weak_signals=(signal,),
+        agent=AGENT_NAME, candidate=None, symptoms=symptoms, facts=(), weak_signals=(signal,),
         rationale=(
             "The database could not be inspected from inside, so sessions, locks and "
             "statements cannot be judged. This agent names no cause."
@@ -85,7 +98,7 @@ def _not_inspectable(evidence):
 def investigate_sql(evidence):
     """Judges one Evidence snapshot from the database's side. Returns an
     AgentFinding whose verdict is exactly assess_sql's."""
-    if evidence.sessions is None:
+    if evidence.sessions is None or evidence.connection_path == "none":
         return _not_inspectable(evidence)
     assessment = assess_sql(evidence)
     sessions = evidence.sessions

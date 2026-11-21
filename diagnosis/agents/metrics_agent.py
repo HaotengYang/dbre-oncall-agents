@@ -44,9 +44,17 @@ def investigate_metrics(evidence):
     facts = []
     problems = []
 
-    if metrics_evidence.missing:
+    # Values the collector does not list as missing but that this agent needs
+    # in order to say anything about the connection limit.
+    unavailable = list(metrics_evidence.missing)
+    if metrics_evidence.max_connections is None or metrics_evidence.max_connections <= 0:
+        unavailable.append("max_connections")
+    if (metrics_evidence.connections_now is None
+            and metrics_evidence.connections_last_known is None):
+        unavailable.append("connection count (current and last known)")
+    if unavailable:
         anomaly_types.add("metrics_missing")
-        facts.append("metrics missing: " + ", ".join(metrics_evidence.missing))
+        facts.append("metrics missing: " + ", ".join(unavailable))
     if metrics_evidence.exporter_reaches_mysql is not True:
         anomaly_types.add("exporter_unreachable")
         if metrics_evidence.exporter_reaches_mysql is False:
@@ -62,13 +70,19 @@ def investigate_metrics(evidence):
         )
         problems.append("the connection count is climbing")
     if evidence.normal_port_error_code is not None:
+        # Any connection error on the normal port. Only error 1040 means the
+        # server refused because it was full; 2003 means it could not be reached.
         anomaly_types.add("normal_port_refused")
-        facts.append(f"normal port refused a connection (error {evidence.normal_port_error_code})")
-        problems.append("the normal port refused a connection")
+        facts.append(f"normal port connection failed (error {evidence.normal_port_error_code})")
+        problems.append(
+            "the normal port refused a connection because the server is full"
+            if evidence.normal_port_error_code == 1040
+            else f"connecting on the normal port failed (error {evidence.normal_port_error_code})"
+        )
 
     connection_count = _connection_count_for_limit(metrics_evidence)
     max_connections = metrics_evidence.max_connections
-    if connection_count is not None and max_connections is not None:
+    if connection_count is not None and max_connections is not None and max_connections > 0:
         count_label = (
             "connection count" if metrics_evidence.connections_now is not None
             else "last known connection count"
@@ -87,9 +101,9 @@ def investigate_metrics(evidence):
         sentences = []
         if problems:
             sentences.append("Metrics show that " + "; ".join(problems) + ".")
-        if metrics_evidence.missing:
+        if unavailable:
             sentences.append(
-                "Some metrics are missing (" + ", ".join(metrics_evidence.missing) + "), and "
+                "Some metrics are missing (" + ", ".join(unavailable) + "), and "
                 "their absence is itself a sign of trouble, not of health."
             )
         rationale = " ".join(sentences)
@@ -107,7 +121,7 @@ def investigate_metrics(evidence):
             "connections_last_known": metrics_evidence.connections_last_known,
             "max_connections": metrics_evidence.max_connections,
             "connections_change_per_second": metrics_evidence.connections_change_per_second,
-            "missing_metrics": list(metrics_evidence.missing),
+            "missing_metrics": unavailable,
         },
         onset=evidence.onset,
     )
