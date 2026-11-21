@@ -359,3 +359,51 @@ def test_importing_every_diagnosis_module_loads_no_answer_holding_module():
                                capture_output=True, text=True, check=True)
 
     assert completed.stdout.strip() == ""
+
+
+def test_the_holdout_set_is_the_owners_four_and_matches_its_scenarios():
+    from eval_runner.cli import load_holdout_cases
+
+    holdout = load_holdout_cases()
+
+    assert sorted(case.case_id for case in holdout) == [
+        "holdout-lookalike-bigger-pool", "holdout-price-editor-lock",
+        "holdout-stuck-active-sessions", "holdout-unindexed-update-customers",
+    ]
+    by_id = {case.case_id: case for case in holdout}
+    assert by_id["holdout-stuck-active-sessions"].expected_root_cause == "connection_exhaustion"
+    assert by_id["holdout-stuck-active-sessions"].also_acceptable == ("undetermined",)
+    assert by_id["holdout-unindexed-update-customers"].expected_symptoms == ("lock_wait",)
+    assert by_id["holdout-unindexed-update-customers"].expected_index == ("customers", ("full_name",))
+    assert by_id["holdout-lookalike-bigger-pool"].expected_root_cause == "healthy"
+    for case in holdout:
+        scenario = find_fault(case.scenario)
+        assert scenario.root_cause == case.expected_root_cause
+        assert set(scenario.expected_symptoms) == set(case.expected_symptoms)
+
+
+def test_holdout_cases_are_kept_out_of_the_full_and_quick_sets():
+    assert all(case.tier != "holdout" for case in ALL_CASES)
+    assert all(case.tier != "holdout" for case in select_cases(ALL_CASES, "full", None))
+    assert all(case.tier != "holdout" for case in select_cases(ALL_CASES, "quick", None))
+    assert {c.tier for c in select_cases(ALL_CASES, "all", None)} == {"basic", "hard", "holdout"}
+    assert len(select_cases(ALL_CASES, "all", None)) == 22
+
+
+def test_report_shows_holdout_apart_and_leaves_it_out_of_all_cases():
+    from eval_runner.cli import load_holdout_cases
+    from eval_runner.report import format_report
+
+    basic_case = next(c for c in ALL_CASES if c.tier == "basic" and c.kind == "single_fault")
+    holdout_case = load_holdout_cases()[0]
+    results = [
+        CaseResult(basic_case, basic_case.expected_root_cause, (), "hit", None, None, 1.0, None),
+        CaseResult(holdout_case, "healthy", (), classify_outcome(holdout_case, "healthy"),
+                   None, None, 1.0, None),
+    ]
+
+    text = format_report(results, "rule_engine")
+
+    assert "HOLDOUT" in text
+    all_cases_section = text.split("ALL CASES (basic and hard)")[1]
+    assert "100.0% (1/1)" in all_cases_section.split("\n\n")[0]

@@ -23,13 +23,29 @@ EXIT_USAGE = 2
 EXIT_ABORTED = 3
 
 
+HOLDOUT_DIRECTORY_NAME = "holdout"
+
+
+def load_holdout_cases():
+    """The holdout cases: their own directory, never part of the full set."""
+    cases = load_cases(EVALS_DIRECTORY / HOLDOUT_DIRECTORY_NAME)
+    for case in cases:
+        if case.tier != "holdout":
+            raise CaseError(f"case '{case.case_id}' is in the holdout directory but not tier holdout")
+    return cases
+
+
 def select_cases(all_cases, set_name, case_id):
+    if set_name == "holdout":
+        all_cases = load_holdout_cases()
+    elif set_name == "all":
+        all_cases = list(all_cases) + load_holdout_cases()
     if case_id is not None:
         selected = [case for case in all_cases if case.case_id == case_id]
         if not selected:
             raise CaseError(f"no case with id '{case_id}'")
         return selected
-    if set_name == "full":
+    if set_name in ("full", "holdout", "all"):
         return all_cases
     sets = json.loads((EVALS_DIRECTORY / "sets.json").read_text())
     if set_name not in sets:
@@ -43,6 +59,8 @@ def select_cases(all_cases, set_name, case_id):
 
 def run_command(arguments):
     all_cases = load_cases(EVALS_DIRECTORY / "cases")
+    if any(case.tier == "holdout" for case in all_cases):
+        raise CaseError("a holdout-tier case is in evals/cases; holdout cases live in evals/holdout")
     cases = select_cases(all_cases, arguments.set, arguments.case)
     thresholds = load_thresholds(EVALS_DIRECTORY / "thresholds.json")
     check_lab_accounts()
@@ -94,8 +112,11 @@ def main(argument_list=None):
     )
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run cases and print the report")
-    run.add_argument("--set", default="quick", help="'quick' (default), 'full', or a set in evals/sets.json")
-    run.add_argument("--case", default=None, help="run a single case by id")
+    run.add_argument("--set", default="quick",
+                     help="'quick' (default), 'full', 'holdout', 'all' (full plus holdout), "
+                          "or a set in evals/sets.json")
+    run.add_argument("--case", default=None,
+                     help="run a single case by id (with --set holdout for a holdout case)")
     run.add_argument("--backend", default="rule_engine", choices=sorted(BACKENDS))
     commands.add_parser("report", help="print the last report again")
     arguments = parser.parse_args(argument_list)

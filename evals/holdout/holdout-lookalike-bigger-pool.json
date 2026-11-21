@@ -1,0 +1,14 @@
+{
+  "id": "holdout-lookalike-bigger-pool",
+  "tier": "holdout",
+  "kind": "healthy_lookalike",
+  "scenario": "healthy.steady_idle_pool",
+  "observe_seconds": 60,
+  "admin_port_available": true,
+  "alert": "Database sessions roughly tripled after we scaled out the app this afternoon and have stayed there. Should we worry?",
+  "expected": {
+    "root_cause": "healthy",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

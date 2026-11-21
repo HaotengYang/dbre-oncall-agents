@@ -1,0 +1,16 @@
+{
+  "id": "holdout-stuck-active-sessions",
+  "tier": "holdout",
+  "kind": "single_fault",
+  "scenario": "connection_exhaustion.active_slow_calls",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "The app is out of database sessions. Database CPU is flat and product pages take several seconds to load.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [
+      "undetermined"
+    ],
+    "symptoms": []
+  }
+}

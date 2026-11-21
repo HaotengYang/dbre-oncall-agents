@@ -4,6 +4,10 @@ Data only. The code that runs these is in `eval_runner/`.
 
 - `cases/`: one JSON file per case. The format is described in
   `docs/proposals/B-evals.md`, section 1.
+- `holdout/`: four holdout cases, designed without sight of the rule engine
+  (`docs/proposals/holdout-cases.md`; owner chose H1, H4, H5, H6). Run with
+  `--set holdout`, or `--set all` for full plus holdout. No thresholds apply.
+  Nothing may be tuned to them.
 - `sets.json`: named subsets. `quick` is what the `verify` skill runs.
 - `thresholds.json`: set by the owner on 2026-11-21.
   - `full`: per tier, minimum hit rate and maximum false-positive rate. Applied
