@@ -68,7 +68,7 @@ def test_committed_thresholds_are_the_ones_the_owner_set():
 
     assert thresholds == {
         "full": {
-            "basic": {"min_hit_rate": 0.83, "max_false_positive_rate": 0.0},
+            "basic": {"min_hit_rate": 1.0, "max_false_positive_rate": 0.0},
             "hard": {"min_hit_rate": 0.625, "max_false_positive_rate": 0.0},
         },
         "quick": {"max_false_positives": 0, "max_misses": 1},

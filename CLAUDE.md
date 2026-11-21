@@ -180,9 +180,9 @@ with a timeout. Tests and the eval runner share one gate for this
 
 Set by the owner in `evals/thresholds.json`.
 
-- Full set, by rate: basic tier hit rate at least 5/6 (raised to 6/6 once step
-  C1 has made the lock-wait evidence stable), hard tier at least 5/8, false
-  positives 0 on both tiers.
+- Full set, by rate: basic tier hit rate 6/6 (raised from 5/6 on 2026-11-21
+  after step C1 made the lock-wait evidence stable: 24 of 24 in three runs),
+  hard tier at least 5/8, false positives 0 on both tiers.
 - Quick set, by count, because it is too small for a rate: no false positive,
   at most one miss. Rate thresholds apply only to the full set.
 
