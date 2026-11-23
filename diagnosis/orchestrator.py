@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from diagnosis.agents.metrics_agent import investigate_metrics
 from diagnosis.agents.sql_agent import investigate_sql
 from diagnosis.contract import HEALTHY, UNDETERMINED, Diagnosis
-from diagnosis.evidence import collect_evidence
+from diagnosis.evidence import collect_evidence, describe_collection_error
 from diagnosis.retrieval import recommend_steps
 from diagnosis.rules import decide
 
@@ -59,14 +59,7 @@ def orchestrate(alert_text, access, collect=collect_evidence, sleep=time.sleep,
         try:
             evidence = collect(access)
         except Exception as collection_error:
-            verdict = Diagnosis(
-                root_cause=UNDETERMINED, rounds_used=round_number,
-                evidence=(f"evidence collection failed: {type(collection_error).__name__}",),
-                rationale=(
-                    "Evidence could not be collected in this round "
-                    f"({type(collection_error).__name__}), so nothing can be concluded from it."
-                ),
-            )
+            verdict = undetermined_after_failed_collection(collection_error, round_number)
         else:
             findings = (investigate_sql(evidence), investigate_metrics(evidence))
             verdict = dataclasses.replace(decide(evidence), rounds_used=round_number)
@@ -96,6 +89,24 @@ def orchestrate(alert_text, access, collect=collect_evidence, sleep=time.sleep,
     final = dataclasses.replace(final, recommended_steps=steps)
     return DiagnosisReport(alert=alert_text, diagnosis=final, findings=findings,
                            rounds=tuple(round_verdicts))
+
+
+def undetermined_after_failed_collection(collection_error, round_number=1):
+    """A round whose evidence could not be collected: undetermined, saying
+    which read failed and why, and asking for a human. Never a crash, never a
+    guess (docs/DESIGN.md: if it cannot be settled, answer undetermined)."""
+    step = getattr(collection_error, "step", "collecting evidence")
+    reason = getattr(collection_error, "reason", None) or describe_collection_error(collection_error)
+    return Diagnosis(
+        root_cause=UNDETERMINED, rounds_used=round_number,
+        evidence=(f"evidence collection failed while {step}: {reason}",),
+        rationale=(
+            f"Evidence could not be collected: {step} failed ({reason}). Nothing is "
+            "concluded from a round without evidence. A database too slow or too full to "
+            "answer the diagnosis account is itself a sign of trouble. "
+            "Undetermined: escalate to a human."
+        ),
+    )
 
 
 def _refuse_healthy_with_missing_metrics(verdict, findings):

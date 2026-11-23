@@ -191,12 +191,16 @@ Approved after two review rounds. Left as known:
 
 One review round. Left as known:
 
-- **Honeycomb replay: the diagnosis crashes instead of answering.** With MySQL
-  at 0.05 CPU, an evidence query timed out (`OperationalError 2013`) and the
-  error escaped the orchestrator, so the case scores `diagnosis_error`. The
-  intended behaviour is a failed collection round leading to `undetermined`.
-  Not fixed, because the replay set is not tuned to; a fix would have to be
-  justified on its own and re-checked on the full set.
+- **Honeycomb replay: fixed, and no longer blind.** With MySQL at 0.05 CPU an
+  evidence query timed out (`OperationalError 2013`) and the recording run
+  crashed. Fixed on the owner's instruction as error handling (a failed read
+  answers `undetermined` and names the read); the rules were not changed.
+  Because the fix was prompted by this case, its later results are not a blind
+  test. Whether the timeout happens at all depends on timing. After the fix:
+  `run` answered `undetermined` (acceptable; the eval report does not store
+  the rationale, so whether a read failed is not recorded), `record` answered
+  `connection_exhaustion` (hit), and a run by hand answered
+  `connection_exhaustion` (hit).
 - **The Honeycomb alert mentions refused connections** (reviewer, suspected:
   close to stating the answer). It describes the symptom the postmortem
   reports (Error 1040); kept as run.

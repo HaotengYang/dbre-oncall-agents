@@ -270,3 +270,14 @@ used and what it achieved.
 - 2026-11-22: Claude committed staged files into the wrong commit while
   splitting work; caught from the commit's file list before pushing and split
   again.
+- 2026-11-22: **A real-incident replay found a crash the synthetic cases never
+  hit.** At 0.05 CPU (Honeycomb replay) an evidence query timed out and the
+  recording run crashed (`OperationalError 2013`) instead of answering. None of
+  the 22 synthetic cases slows the whole server, so none had reached that path.
+  The owner asked for an error-handling fix, not a rule change: a failed read
+  now names its step and reason and answers `undetermined, escalate to a
+  human`. The one review round found the default rule-engine eval backend
+  still crashed the same way, and that the first fix would have hidden
+  programming errors as `undetermined`; both fixed. The frozen rules are
+  unchanged. Because the replay exposed the bug that was then fixed, it no
+  longer counts as a blind test.
