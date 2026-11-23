@@ -466,7 +466,7 @@ from a reputable Hugging Face publisher, otherwise skip).
 
 | Item | Value |
 |---|---|
-| Python packages | `onnxruntime` 1.32.0 (about 22 MB wheel), `tokenizers` 0.23.3 (about 3 MB), `numpy` (already a dependency of nothing else here; installed with them) |
+| Python packages | `onnxruntime` 1.32.0 (about 22 MB wheel), `tokenizers` 0.23.3 (about 3 MB), `numpy` 2.4.6 (the newest for Python 3.11) |
 | Model | `sentence-transformers/all-MiniLM-L6-v2`, revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, Apache-2.0 |
 | Files downloaded | `onnx/model.onnx` (90.4 MB), `tokenizer.json` (0.5 MB) |
 | Source | https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 (publisher: the sentence-transformers project) |
