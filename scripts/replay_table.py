@@ -29,7 +29,7 @@ def latest_report_per_model():
 
 def rate(numerator, denominator):
     if denominator == 0:
-        return "n/a"
+        return "n/a (0/0)"
     return f"{numerator / denominator:.0%} ({numerator}/{denominator})"
 
 
@@ -41,6 +41,9 @@ def backend_row(backend, rows):
         healthy = [row for row in tier_rows if row["expected"] == "healthy"]
         cells.append(rate(sum(row["outcome"] == "hit" for row in faults), len(faults)))
         cells.append(rate(sum(row["outcome"] == "false_positive" for row in healthy), len(healthy)))
+        # Mild false alarm: a healthy case answered "undetermined".
+        cells.append(rate(sum(row["outcome"] == "undetermined_on_healthy" for row in healthy),
+                          len(healthy)))
     answers_by_case = {}
     for row in rows:
         answers_by_case.setdefault(row["case_id"], []).append(row["answered"])
@@ -69,7 +72,7 @@ def build_table(report_paths):
             rows_by_backend.setdefault(row["backend"], []).append(row)
     header = ["Backend"]
     for _, label in TIERS:
-        header += [f"{label} hit", f"{label} FP"]
+        header += [f"{label} hit", f"{label} FP", f"{label} mild FP"]
     header += ["Stability", "Mean time", "No answer", "Spent"]
     lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for backend, rows in rows_by_backend.items():

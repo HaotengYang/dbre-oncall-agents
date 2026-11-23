@@ -167,12 +167,17 @@ evidence collection; the end-to-end numbers above are a separate layer. Hit
 rate and false-positive rate per tier, every run counted; stability is the
 share of cases whose repeated answers agreed.
 
-| Backend | Basic hit | Basic FP | Hard hit | Hard FP | Holdout hit | Holdout FP | Incidents hit | Incidents FP | Stability | Mean time | No answer | Spent |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Rule engine | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 33% (1/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | <0.1 s | 0 | 0.00 USD |
-| claude-haiku-5-5, 3 runs | 100% (18/18) | 0% (0/6) | 75% (18/24) | 0% (0/6) | 78% (7/9) | 0% (0/3) | 100% (6/6) | n/a | 96% (23/24) | 2.8 s | 0 | 0.04 USD |
-| claude-sonnet-5-5, 1 run | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | 2.9 s | 0 | 0.20 USD |
-| claude-opus-5-5, 1 run | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | 3.6 s | 0 | 0.43 USD |
+| Backend | Basic hit | Basic FP | Basic mild FP | Hard hit | Hard FP | Hard mild FP | Holdout hit | Holdout FP | Holdout mild FP | Incidents hit | Incidents FP | Incidents mild FP | Stability | Mean time | No answer | Spent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Rule engine | 100% (6/6) | 0% (0/2) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 0% (0/2) | 33% (1/3) | 0% (0/1) | 100% (1/1) | 100% (2/2) | n/a (0/0) | n/a (0/0) | 1 run | <0.1 s | 0 | 0.00 USD |
+| claude-haiku-5-5, 3 runs | 100% (18/18) | 0% (0/6) | 0% (0/6) | 75% (18/24) | 0% (0/6) | 0% (0/6) | 78% (7/9) | 0% (0/3) | 0% (0/3) | 100% (6/6) | n/a (0/0) | n/a (0/0) | 96% (23/24) | 2.8 s | 0 | 0.04 USD |
+| claude-sonnet-5-5, 1 run | 100% (6/6) | 0% (0/2) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 0% (0/1) | 100% (2/2) | n/a (0/0) | n/a (0/0) | 1 run | 2.9 s | 0 | 0.20 USD |
+| claude-opus-5-5, 1 run | 100% (6/6) | 0% (0/2) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 0% (0/1) | 100% (2/2) | n/a (0/0) | n/a (0/0) | 1 run | 3.6 s | 0 | 0.43 USD |
+
+False positives are counted on the healthy cases only: 2 in the basic tier,
+2 in the hard tier, 1 in the holdout set, none among the incident replays,
+times the number of runs (Haiku ran 3 times, so 6, 6 and 3). "Mild FP" is a
+healthy case answered `undetermined`.
 
 - Order run, cheapest first: Gemini 3.8 Flash and Claude Haiku 5.5 three times
   per case, then Sonnet 5.5 and Opus 5.5 once. Cap 10 USD for everything.
@@ -185,10 +190,13 @@ share of cases whose repeated answers agreed.
   the Honeycomb case is not blind here either.
 
 **What the data supports:** on the same evidence, the three Claude models
-matched the rule engine on the basic, hard and incident cases and made no false
-positive. They did better only on the holdout set (Haiku 7/9 over three runs,
-Sonnet and Opus 2/3 each, the rule engine 1/3), which has three fault cases, so
-the difference rests on very few cases. Haiku was the cheapest and fastest.
+matched the rule engine on the basic, hard and incident cases, and no backend
+answered a fault on a healthy case. They did better only on the holdout set:
+Haiku 7/9 over three runs and Sonnet and Opus 2/3 each, against 1/3 for the rule
+engine, and on its one healthy look-alike the models answered `healthy` where
+the rule engine answered `undetermined`. The holdout set has three fault cases
+and one healthy case, and there are five healthy cases in all, so these
+differences rest on very few cases. Haiku was the cheapest and fastest.
 
 Reproduce: `python -m eval_runner replay --set everything --models <model> --repeats <n>`,
 then `python scripts/replay_table.py <reports>`.
