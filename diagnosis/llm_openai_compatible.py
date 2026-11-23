@@ -23,6 +23,11 @@ from diagnosis.contract import Diagnosis
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
+class UsageNotReported(Exception):
+    """The provider answered but did not say how many tokens it billed. The
+    caller charges the call at its worst case rather than as free."""
+
+
 def ask_openai_compatible(client, model, alert_text, evidence):
     """One call. Returns (Diagnosis, ModelCall). Raises ModelAnswerError."""
     started_at = time.monotonic()
@@ -37,11 +42,13 @@ def ask_openai_compatible(client, model, alert_text, evidence):
     )
     seconds = time.monotonic() - started_at
     usage = response.usage
-    input_tokens = usage.prompt_tokens if usage else 0
+    if usage is None or usage.prompt_tokens is None or (
+            usage.total_tokens is None and usage.completion_tokens is None):
+        raise UsageNotReported("the response did not report its token usage")
+    input_tokens = usage.prompt_tokens
     # Thinking tokens are billed as output; some providers leave them out of
     # completion_tokens, so output is taken as total minus prompt.
-    total_tokens = usage.total_tokens if usage and usage.total_tokens else 0
-    output_tokens = max(total_tokens - input_tokens, usage.completion_tokens or 0) if usage else 0
+    output_tokens = max((usage.total_tokens or 0) - input_tokens, usage.completion_tokens or 0)
     call = ModelCall(model=model, input_tokens=input_tokens, output_tokens=output_tokens,
                      cost_usd=cost_of(model, input_tokens, output_tokens), seconds=seconds)
     choice = response.choices[0] if response.choices else None

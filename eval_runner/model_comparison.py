@@ -252,20 +252,26 @@ def _is_wait_and_retry(error):
             or getattr(error, "status_code", None) in WAIT_AND_RETRY_STATUS_CODES)
 
 
+class WaitsExhausted(Exception):
+    """Still rate-limited or overloaded after every wait. Nothing was billed;
+    the model is skipped for the rest of the run."""
+
+
 def _ask_with_rate_limit_waits(client, model, alert_text, evidence, sleep):
     """A rate-limited or overloaded request is refused before any work is
     billed, so it is waited out and sent again; it is not counted as a
     failure. A timeout is not retried: it may have been billed."""
     ask = client.ask if hasattr(client, "ask") else (
         lambda model_name, alert, recorded: ask_model(client, model_name, alert, recorded))
-    for wait_seconds in RATE_LIMIT_WAITS_SECONDS:
+    for wait_seconds in (*RATE_LIMIT_WAITS_SECONDS, None):
         try:
             return ask(model, alert_text, evidence)
         except Exception as failed:
             if not _is_wait_and_retry(failed):
                 raise
+            if wait_seconds is None:
+                raise WaitsExhausted(f"{type(failed).__name__} after every wait") from failed
             sleep(wait_seconds)
-    return ask(model, alert_text, evidence)
 
 
 def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledger=None,
@@ -291,11 +297,14 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
         results.append(ReplayResult("rule_engine", 1,
                                     _scored(case, rule_answer, time.monotonic() - started_at), 0.0))
     calls_made = 0
+    skipped_models = {}  # model -> why it was dropped; the others carry on
     calls_by_model = {model: 0 for model in models}
     planned_by_model = {model: repeats * len(recorded) for model in models}
     for repeat in range(1, repeats + 1):
         for case, evidence in recorded:
             for model in models:
+                if model in skipped_models:
+                    continue
                 if max_calls is not None and calls_made >= max_calls:
                     return results, f"stopped after the requested {max_calls} model calls"
                 if calibration_calls and calls_by_model[model] == calibration_calls:
@@ -320,10 +329,15 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
                 except ModelAnswerError as failed:
                     model_call = failed.call
                     case_result = _no_answer(case, str(failed), time.monotonic() - started_at)
-                except Exception as failed:  # network, timeout, rate limit, API error
+                except WaitsExhausted as exhausted:
+                    skipped_models[model] = f"{model}: {exhausted}; skipped, nothing charged"
+                    continue
+                except Exception as failed:  # network, timeout, API error
                     if type(failed).__name__ in PERSISTENT_ERROR_NAMES:
-                        return results, (f"{model}: {type(failed).__name__}; every later call "
-                                         "would fail the same way, so the run stopped")
+                        skipped_models[model] = (
+                            f"{model}: {type(failed).__name__}; every later call would fail "
+                            "the same way, so this model was skipped")
+                        continue
                     model_call = None
                     cost = ledger.add_unknown_cost(model, case.case_id)
                     case_result = _no_answer(
@@ -335,10 +349,18 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
                 if model_call is not None:
                     ledger.add(model_call, case.case_id)
                     cost = model_call.cost_usd
+                    if model_call.output_tokens > MAX_OUTPUT_TOKENS:
+                        # The worst-case pre-check assumed output is capped;
+                        # if a provider exceeds it, stop before trusting it again.
+                        return results, (
+                            f"{model} returned {model_call.output_tokens} output tokens, above "
+                            f"the {MAX_OUTPUT_TOKENS} the cost check assumes; run stopped")
                 replay_result = ReplayResult(model, repeat, case_result, cost)
                 results.append(replay_result)
                 if on_result is not None:
                     on_result(replay_result)
+    if skipped_models:
+        return results, "; ".join(skipped_models.values())
     return results, None
 
 

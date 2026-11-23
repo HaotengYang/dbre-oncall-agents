@@ -92,7 +92,7 @@ def test_a_call_that_fails_without_usage_is_charged_at_its_worst_case(recordings
 
 
 @pytest.mark.parametrize("error_name", ["AuthenticationError", "NotFoundError", "BadRequestError"])
-def test_an_error_every_call_would_repeat_stops_the_run(recordings, tmp_path, error_name):
+def test_an_error_every_call_would_repeat_skips_each_model_after_one_try(recordings, tmp_path, error_name):
     persistent_error = type(error_name, (Exception,), {})
 
     class FailingClient:
@@ -109,8 +109,11 @@ def test_an_error_every_call_would_repeat_stops_the_run(recordings, tmp_path, er
                                   ledger=SpendLedger(tmp_path / "s.json"),
                                   recordings_directory=recordings)
 
-    assert client.calls == 1
-    assert error_name in stop_reason
+    # Owner, 2026-11-22: a provider that errors is skipped and the next one
+    # runs. Here every model fails, so each is tried once and then skipped.
+    from eval_runner.model_comparison import APPROVED_MODELS
+    assert client.calls == len(APPROVED_MODELS)
+    assert error_name in stop_reason and "skipped" in stop_reason
     assert not any(r.case_result.outcome == "diagnosis_error" for r in results)
 
 

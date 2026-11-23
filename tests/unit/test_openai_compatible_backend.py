@@ -134,3 +134,72 @@ def test_an_overloaded_model_is_waited_out_but_a_timeout_is_not_retried():
     assert _is_wait_and_retry(OverloadedServerError("high demand"))
     assert _is_wait_and_retry(RateLimitError("429"))
     assert not _is_wait_and_retry(TimeoutLike("timed out"))
+
+
+def test_a_response_without_usage_is_charged_at_its_worst_case_not_as_free(recordings, tmp_path):  # noqa: F811
+    client = FakeChatClient(json.dumps(GOOD_ANSWER))
+    client.usage = None
+    ledger = SpendLedger(tmp_path / "s.json", cap_usd=10)
+    replay([LOCK_CASE], ModelClients(gemini_client=client), models=("gemini-3.8-flash",),
+           repeats=1, ledger=ledger, recordings_directory=recordings)
+    assert len(ledger.calls) == 1 and ledger.calls[0]["estimated"]
+    assert ledger.calls[0]["cost_usd"] == pytest.approx(ledger.worst_case_cost("gemini-3.8-flash"))
+
+
+class NotFoundError(Exception):
+    pass
+
+
+class GeminiBrokenClaudeFine:
+    def __init__(self):
+        self.inner = FakeClient(GOOD_ANSWER)
+
+    def ask(self, model, alert_text, evidence):
+        if model.startswith("gemini-"):
+            raise NotFoundError("unknown model")
+        return model_comparison.ask_model(self.inner, model, alert_text, evidence)
+
+
+def test_a_persistent_error_skips_that_model_and_the_next_one_still_runs(recordings, tmp_path):  # noqa: F811
+    ledger = SpendLedger(tmp_path / "s.json", cap_usd=10)
+    results, stop_reason = replay([LOCK_CASE, HEALTHY_CASE], GeminiBrokenClaudeFine(),
+                                  models=("gemini-3.8-flash", "claude-haiku-5-5"), repeats=2,
+                                  ledger=ledger, recordings_directory=recordings)
+    assert [r for r in results if r.backend == "gemini-3.8-flash"] == []
+    assert len([r for r in results if r.backend == "claude-haiku-5-5"]) == 4
+    assert "gemini-3.8-flash: NotFoundError" in stop_reason and "skipped" in stop_reason
+
+
+class AlwaysLimited:
+    def ask(self, model, alert_text, evidence):
+        raise RateLimitError("429 quota")
+
+
+def test_a_rate_limit_that_never_lifts_skips_the_model_and_charges_nothing(recordings, tmp_path):  # noqa: F811
+    waits = []
+    ledger = SpendLedger(tmp_path / "s.json", cap_usd=10)
+    results, stop_reason = replay([LOCK_CASE, HEALTHY_CASE], AlwaysLimited(),
+                                  models=("gemini-3.8-flash",), repeats=1, ledger=ledger,
+                                  recordings_directory=recordings, sleep=waits.append)
+    assert ledger.calls == [] and ledger.total_usd == 0
+    assert [r for r in results if r.backend == "gemini-3.8-flash"] == []
+    assert len(waits) == len(model_comparison.RATE_LIMIT_WAITS_SECONDS)  # gave up once, then skipped
+    assert "skipped, nothing charged" in stop_reason
+
+
+def test_gemini_models_are_sent_through_the_openai_compatible_client(recordings, tmp_path):  # noqa: F811
+    client = FakeChatClient(json.dumps(GOOD_ANSWER))
+    ledger = SpendLedger(tmp_path / "s.json", cap_usd=10)
+    results, _ = replay([LOCK_CASE], ModelClients(gemini_client=client), models=("gemini-3.8-flash",),
+                        repeats=1, ledger=ledger, recordings_directory=recordings)
+    assert len(client.sent) == 1 and client.sent[0]["model"] == "gemini-3.8-flash"
+    assert [r.case_result.outcome for r in results if r.backend == "gemini-3.8-flash"] == ["hit"]
+
+
+def test_an_answer_longer_than_the_assumed_output_cap_stops_the_run(recordings, tmp_path):  # noqa: F811
+    client = FakeChatClient(json.dumps(GOOD_ANSWER), prompt_tokens=4_000, total_tokens=4_000 + 20_000)
+    ledger = SpendLedger(tmp_path / "s.json", cap_usd=10)
+    results, stop_reason = replay([LOCK_CASE, HEALTHY_CASE], ModelClients(gemini_client=client),
+                                  models=("gemini-3.8-flash",), repeats=1, ledger=ledger,
+                                  recordings_directory=recordings)
+    assert "above the 16000" in stop_reason and len(ledger.calls) == 1
