@@ -29,6 +29,7 @@ from diagnosis.llm import (
     ask_model,
     cost_of,
 )
+from diagnosis.orchestrator import undetermined_after_failed_collection
 from diagnosis.rules import decide
 from diagnosis.serialization import evidence_from_dict, evidence_to_dict
 from eval_runner.runner import RunAborted, run_case
@@ -69,7 +70,13 @@ def record_cases(cases, recordings_directory=RECORDINGS_DIRECTORY, on_result=Non
         captured = {}
 
         def collect_and_decide(alert_text, access, captured=captured):
-            evidence = collect_evidence(access)
+            # The same rule as the orchestrator: a failed collection is an
+            # undetermined answer that names the failed read, not a crash.
+            # Nothing is recorded for replay, since there is no evidence.
+            try:
+                evidence = collect_evidence(access)
+            except Exception as collection_error:
+                return undetermined_after_failed_collection(collection_error)
             captured["evidence"] = evidence
             return decide(evidence)
 

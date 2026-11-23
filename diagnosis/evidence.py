@@ -415,6 +415,27 @@ def explain_heaviest_statements(statements, open_connection):
     )
 
 
+class EvidenceCollectionFailed(Exception):
+    """A read failed half-way. Names the step and the reason, so the report
+    can say what could not be checked instead of crashing."""
+
+    def __init__(self, step, error):
+        self.step = step
+        self.reason = describe_collection_error(error)
+        super().__init__(f"{step}: {self.reason}")
+
+
+def describe_collection_error(error):
+    """Error type, MySQL error code if any, and the driver's message on one line."""
+    arguments = getattr(error, "args", ())
+    code = arguments[0] if (isinstance(error, pymysql.MySQLError) and arguments
+                            and isinstance(arguments[0], int)) else None
+    message = arguments[1] if code is not None and len(arguments) > 1 else str(error)
+    message = " ".join(str(message).split())[:160]
+    return type(error).__name__ + (f" {code}" if code is not None else "") + (
+        f": {message}" if message else "")
+
+
 def collect_evidence(access, window_seconds=5):
     """Collects evidence over one window. Takes a little over window_seconds."""
     metrics = collect_metrics(access.prometheus_url)
@@ -432,26 +453,35 @@ def collect_evidence(access, window_seconds=5):
                 connect_timeout=CONNECT_TIMEOUT_SECONDS, read_timeout=read_timeout,
             )
 
+        step = "reading server settings"
         try:
             max_connections = int(_fetch_value(connection, "SELECT @@global.max_connections"))
             max_sample_length = int(_fetch_value(
                 connection, "SELECT @@global.performance_schema_max_sql_text_length"
             ))
+            step = "reading statement digests at the start of the window"
             digests_before = _digest_snapshot(connection)
             started_at = time.monotonic()
+            step = "sampling sessions and lock waits"
             session_samples = []
             for sample_number in range(SESSION_SAMPLE_COUNT):
                 session_samples.append(read_session_sample(connection))
                 if sample_number < SESSION_SAMPLE_COUNT - 1:
                     time.sleep(window_seconds / (SESSION_SAMPLE_COUNT - 1))
+            step = "reading statement digests at the end of the window"
             digests_after = _digest_snapshot(connection)
             statements = statement_loads(
                 digests_before, digests_after, time.monotonic() - started_at, max_sample_length
             )
             sessions = combine_session_samples(session_samples, max_connections)
+        except (pymysql.MySQLError, OSError) as error:
+            raise EvidenceCollectionFailed(step, error) from error
         finally:
             connection.close()
-        statements = explain_heaviest_statements(statements, open_explain_connection)
+        try:
+            statements = explain_heaviest_statements(statements, open_explain_connection)
+        except (pymysql.MySQLError, OSError) as error:
+            raise EvidenceCollectionFailed("explaining the heaviest statements", error) from error
     return Evidence(
         connection_path=path,
         normal_port_error_code=normal_error_code,
