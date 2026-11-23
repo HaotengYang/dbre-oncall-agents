@@ -458,3 +458,21 @@ The Honeycomb simulation lowers MySQL's CPU limit to 0.05 while clients keep
 opening connections. The diagnosis account's own evidence query timed out and
 the error escaped instead of becoming an undetermined round. This is recorded,
 not fixed: the replay set is not tuned to (KNOWN_ISSUES.md).
+
+## Step 8b: vector retrieval with a local embedding model (2026-11-22)
+
+Written before anything was installed (owner's condition: model under 500 MB
+from a reputable Hugging Face publisher, otherwise skip).
+
+| Item | Value |
+|---|---|
+| Python packages | `onnxruntime` 1.32.0 (about 22 MB wheel), `tokenizers` 0.23.3 (about 3 MB), `numpy` (already a dependency of nothing else here; installed with them) |
+| Model | `sentence-transformers/all-MiniLM-L6-v2`, revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, Apache-2.0 |
+| Files downloaded | `onnx/model.onnx` (90.4 MB), `tokenizer.json` (0.5 MB) |
+| Source | https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 (publisher: the sentence-transformers project) |
+| API calls | none; the model runs locally, offline after the one download |
+
+Why this one: 90 MB is well under the limit, it needs no PyTorch, and it is the
+most widely used small sentence-embedding model from the library's own
+publisher. Packages go in `requirements-vector.txt`, separate from the default
+install, so keyword retrieval still runs with no extra dependency.

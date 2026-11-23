@@ -1,0 +1,5 @@
+# Optional: vector retrieval (python -m eval_runner retrieval --retriever vector).
+# The model files are fetched by scripts/fetch_embedding_model.py.
+onnxruntime==1.32.0
+tokenizers==0.23.3
+numpy==2.5.5
