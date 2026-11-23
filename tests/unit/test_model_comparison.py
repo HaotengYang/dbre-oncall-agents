@@ -170,7 +170,8 @@ def test_calibration_summary_projects_the_full_cost_from_measured_calls(recordin
 
     ledger = SpendLedger(tmp_path / "s.json", cap_usd=40)
     replay([LOCK_CASE, HEALTHY_CASE], FakeClient(GOOD_ANSWER, input_tokens=4_000, output_tokens=1_000), repeats=5,
-           ledger=ledger, max_calls=4, recordings_directory=recordings)
+           ledger=ledger, max_calls=4, recordings_directory=recordings,
+           models=("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"))
 
     summary = calibration_summary(ledger, ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
                                   case_count=22, repeats=5)

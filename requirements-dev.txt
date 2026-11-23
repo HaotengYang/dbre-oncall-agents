@@ -4,3 +4,4 @@ cryptography==43.0.3
 prometheus-client==0.21.0
 requests==2.32.3
 anthropic==2.12.0
+openai==2.54.0

@@ -55,12 +55,15 @@ def select_cases(all_cases, set_name, case_id):
         all_cases = load_holdout_cases()
     elif set_name == "all":
         all_cases = list(all_cases) + load_holdout_cases()
+    elif set_name == "everything":
+        # All 24: the 18 tiered cases, the holdout set and the incident replays.
+        all_cases = list(all_cases) + load_holdout_cases() + load_incident_cases()
     if case_id is not None:
         selected = [case for case in all_cases if case.case_id == case_id]
         if not selected:
             raise CaseError(f"no case with id '{case_id}'")
         return selected
-    if set_name in ("full", "holdout", "all", "incidents"):
+    if set_name in ("full", "holdout", "all", "incidents", "everything"):
         return all_cases
     sets = json.loads((EVALS_DIRECTORY / "sets.json").read_text())
     if set_name not in sets:
@@ -139,11 +142,12 @@ def record_command(arguments):
 def replay_command(arguments):
     from eval_runner.model_comparison import (
         APPROVED_MODELS,
+        CALIBRATION_CALLS,
         REPORTS_SUBDIRECTORY,
         SpendLedger,
         calibration_summary,
         format_replay_report,
-        load_api_client,
+        load_model_clients,
         replay,
         replay_results_as_json,
     )
@@ -154,10 +158,13 @@ def replay_command(arguments):
         raise CaseError(f"models not approved by the owner: {unapproved}")
     all_cases = load_cases(EVALS_DIRECTORY / "cases")
     cases = select_cases(all_cases, arguments.set, arguments.case)
-    try:
-        client = load_api_client()
-    except KeyError:
-        print("error: ANTHROPIC_API_KEY is not set in .env; the rule engine needs no key, "
+    client = load_model_clients()
+    skipped = [model for model in models if not client.available(model)]
+    for model in skipped:
+        print(f"skipping {model}: no key for its provider in .env", flush=True)
+    models = tuple(model for model in models if model not in skipped)
+    if not models:
+        print("error: no key in .env for any requested model; the rule engine needs no key, "
               "model replay does", file=sys.stderr)
         return EXIT_USAGE
     ledger = SpendLedger()
@@ -172,7 +179,8 @@ def replay_command(arguments):
 
     results, stop_reason = replay(cases, client, models=models, repeats=arguments.repeats,
                                   ledger=ledger, max_calls=arguments.max_calls,
-                                  on_result=show_progress)
+                                  on_result=show_progress,
+                                  calibration_calls=CALIBRATION_CALLS)
     REPORTS_SUBDIRECTORY.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = REPORTS_SUBDIRECTORY / f"{stamp}-replay.json"
