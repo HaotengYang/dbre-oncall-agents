@@ -4,7 +4,7 @@ COMPOSE := docker compose
 PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 STARTUP_TIMEOUT_SECONDS := 300
 
-.PHONY: help venv up down reset ps logs test test-lab test-lifecycle verify evals-full
+.PHONY: help venv up down reset ps logs test test-lab test-lifecycle verify evals-full demo
 
 help:
 	@echo "make venv            create .venv and install test dependencies"
@@ -18,6 +18,7 @@ help:
 	@echo "make test-lifecycle  stop/start/reset tests (slow, restarts the lab)"
 	@echo "make verify          full check before merging: lab up, unit tests, quick evals"
 	@echo "make evals-full      every eval case against the live lab (about 25 minutes)"
+	@echo "make demo            live demo: inject a cascade, diagnose, rehearse the index (about 4 minutes)"
 
 .env:
 	@echo "No .env file. Run: cp .env.example .env   and set the passwords." >&2
@@ -65,3 +66,5 @@ evals-full: up
 	$(PYTHON) -m fault_injector clear
 	$(PYTHON) -m eval_runner run --set full
 
+demo: up
+	$(PYTHON) scripts/demo.py
