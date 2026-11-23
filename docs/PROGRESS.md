@@ -430,3 +430,31 @@ that the sample copy took shared row locks on production rows under the
 default isolation level, and that the target-query EXPLAIN lacked the
 read-only session and timeout the diagnosis side uses.
 
+
+## Sunday evening plan (owner, 2026-11-22 21:05)
+
+### Step 2: model comparison: not run
+
+No API key of any provider is in `.env`. Per the owner's instruction the step
+was skipped: the model path is implemented and unit-tested, the full comparison
+was not run for cost control, the recorded evidence is kept locally
+(`var/recordings/`), and with a key in `.env` one command reproduces it
+(`python -m eval_runner replay`). Spend: 0 USD.
+
+### Step 3: incident replays (`evals/incident-replays/`)
+
+Two cases built from public postmortems, run like the holdout set: no tuning,
+no thresholds, a separate report section, not part of ALL CASES. One review
+round; its must-fix findings were fixed in their own commit.
+
+Rule engine, end to end (recording run, 2026-11-22 21:13 PST):
+
+| Case | Expected | Answered | Outcome |
+|---|---|---|---|
+| incident-github-2022-03 | missing_index_slow_query (symptom connection_exhaustion) | missing_index_slow_query, symptom listed, index correct | hit |
+| incident-honeycomb-2018-05 | connection_exhaustion (undetermined acceptable) | no answer: `OperationalError 2013 ... (timed out)` | diagnosis_error |
+
+The Honeycomb simulation lowers MySQL's CPU limit to 0.05 while clients keep
+opening connections. The diagnosis account's own evidence query timed out and
+the error escaped instead of becoming an undetermined round. This is recorded,
+not fixed: the replay set is not tuned to (KNOWN_ISSUES.md).
