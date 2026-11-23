@@ -60,6 +60,8 @@ def restore_calls(monkeypatch):
     """Replaces the database restore and counts how often it is reached."""
     calls = []
     monkeypatch.setattr(engine, "load_lab_settings", lambda: None)
+    # Unit tests never call docker.
+    monkeypatch.setattr(engine.container_limits, "restore_cpu_limit", lambda: False)
     monkeypatch.setattr(
         engine, "restore_baseline_on_fresh_connection",
         lambda settings: calls.append("restore") or [],

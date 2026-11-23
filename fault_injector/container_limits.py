@@ -7,6 +7,7 @@ every stop and by "clear", so an interrupted run cannot leave the lab slow.
 """
 
 import pathlib
+import re
 import subprocess
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -36,8 +37,9 @@ def current_nano_cpus():
 
 def set_cpu_limit(cpus):
     """Sets the MySQL container's CPU limit, for example "0.1"."""
-    if not isinstance(cpus, str) or not cpus.replace(".", "", 1).isdigit():
-        raise ValueError("cpus must be a plain decimal string")
+    # Above 0 and at most 1 (the baseline), ASCII digits only.
+    if not isinstance(cpus, str) or not re.fullmatch(r"0\.[0-9]*[1-9][0-9]*|1(\.0+)?", cpus):
+        raise ValueError("cpus must be a decimal string above 0 and at most 1")
     subprocess.run(["docker", "update", "--cpus", cpus, _mysql_container_id()],
                    capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, check=True)
 
