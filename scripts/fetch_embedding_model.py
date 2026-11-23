@@ -5,6 +5,7 @@ hash differs is deleted and the script fails.
 """
 
 import hashlib
+import os
 import pathlib
 import sys
 import urllib.request
@@ -31,13 +32,20 @@ def main():
     MODEL_DIRECTORY.mkdir(parents=True, exist_ok=True)
     for remote_path, expected_hash in FILES.items():
         local_path = MODEL_DIRECTORY / pathlib.PurePosixPath(remote_path).name
-        if not local_path.exists() or sha256_of(local_path) != expected_hash:
-            print(f"downloading {remote_path}", flush=True)
-            urllib.request.urlretrieve(BASE_URL + remote_path, local_path)
-        if sha256_of(local_path) != expected_hash:
-            local_path.unlink()
-            print(f"error: {remote_path} does not match its pinned hash", file=sys.stderr)
-            return 1
+        if local_path.exists() and sha256_of(local_path) == expected_hash:
+            continue
+        # Download beside the target and move it into place only once its
+        # hash is right, so a failed or partial download never stays behind.
+        partial_path = local_path.with_suffix(local_path.suffix + ".partial")
+        print(f"downloading {remote_path}", flush=True)
+        try:
+            urllib.request.urlretrieve(BASE_URL + remote_path, partial_path)
+            if sha256_of(partial_path) != expected_hash:
+                print(f"error: {remote_path} does not match its pinned hash", file=sys.stderr)
+                return 1
+            os.replace(partial_path, local_path)
+        finally:
+            partial_path.unlink(missing_ok=True)
     print(f"model ready in {MODEL_DIRECTORY}")
     return 0
 

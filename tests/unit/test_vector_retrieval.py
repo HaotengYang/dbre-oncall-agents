@@ -46,8 +46,18 @@ def test_ties_are_broken_by_runbook_id_so_results_are_deterministic():
     assert [hit.runbook.runbook_id for hit in retriever.search("nothing known")] == ["RB01", "RB02", "RB04"]
 
 
-def test_a_missing_model_is_reported_with_the_command_that_fetches_it(tmp_path):
-    with pytest.raises(EmbeddingModelMissing, match="fetch_embedding_model"):
+def test_a_missing_model_or_package_is_reported_with_the_command_that_fixes_it(tmp_path):
+    # Without the optional packages the install command is named; with them,
+    # the fetch command. Either way it is a clean error, not a traceback.
+    with pytest.raises(EmbeddingModelMissing, match="requirements-vector|fetch_embedding_model"):
+        MiniLMEmbedder(model_directory=tmp_path)
+
+
+def test_without_the_optional_packages_the_install_command_is_named(tmp_path, monkeypatch):
+    import sys
+    for module_name in ("numpy", "onnxruntime", "tokenizers"):
+        monkeypatch.setitem(sys.modules, module_name, None)
+    with pytest.raises(EmbeddingModelMissing, match="requirements-vector.txt"):
         MiniLMEmbedder(model_directory=tmp_path)
 
 
