@@ -245,3 +245,14 @@ used and what it achieved.
   owner's explicit approval. Lesson: approval for one merge is not approval
   for the next.
 
+- 2026-11-22: **Public incident material gathered outside Claude Code.** The
+  owner used Grok to collect public postmortems and articles for the README's
+  "Real-world grounding" table and checked each item by hand before giving it
+  to Claude. Claude re-checked the Honeycomb source: the link serves another
+  article to automated fetches, search engines index the postmortem there, and
+  a cause Claude had written into the case notes ("degraded RDS hardware")
+  could not be confirmed and was removed.
+- 2026-11-22: **Incident replays run like a holdout.** Why: the synthetic
+  cases share an author with the rules. Effect: 1/2; the miss is a crash
+  (an evidence query timed out at 0.05 CPU), found only because the scenario
+  was harsher than anything in the original 22 cases.
