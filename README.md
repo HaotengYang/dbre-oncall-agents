@@ -27,6 +27,9 @@ work: `docs/KNOWN_ISSUES.md`. How Claude Code was used: `AI_WORKFLOW.md`.
   - **Docker Desktop**: install it, start it once, and `docker compose version` works.
   - **Colima** (no desktop app): `brew install colima docker docker-compose`, then
     `colima start --cpu 4 --memory 4`. Colima must be started again after a reboot.
+    Colima shares only your home directory with containers by default, so clone
+    the repository somewhere under `~` (a clone under `/tmp` starts MySQL with
+    empty configuration and seed folders, and `make up` never becomes healthy).
     If `docker compose` is not found, add
     `{"cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]}` to
     `~/.docker/config.json`.
@@ -83,6 +86,7 @@ refused.
 | `make test` | Unit tests, no containers | seconds |
 | `make test-lab` | Tests against the running lab | about 20 minutes |
 | `make test-lifecycle` | Stop, start, reset, failed first start | about 4 minutes |
+| `python -m eval_runner run --set quick` | The quick eval set, judged by count | about 6 minutes |
 | `scripts/verify.sh` | Lab up, unit tests, clear, quick eval set; exits with the failing step's code | about 10 minutes |
 | `python -m eval_runner run --set full` | All 18 cases, judged against `evals/thresholds.json` | about 35 minutes |
 | `python -m eval_runner run --set holdout` | The 4 holdout cases (no thresholds) | about 8 minutes |
