@@ -56,7 +56,15 @@ If the lab ever refuses to become healthy after a failed first start, run
 
 ## Try it
 
-Break the lab and diagnose it, in two terminals:
+The whole story in one command, about a minute and a half: a startup check, a
+cascading fault (an unindexed query piles up until connections run out), the
+diagnosis, a change-gate rehearsal of the suggested index, and cleanup.
+
+```bash
+make demo
+```
+
+Or step by step: break the lab and diagnose it, in two terminals:
 
 ```bash
 .venv/bin/python -m fault_injector list
