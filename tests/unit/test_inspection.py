@@ -106,3 +106,80 @@ def test_the_interval_cannot_be_too_short():
     import pytest
     with pytest.raises(SystemExit):
         inspection.main(["--every", "5"])
+
+
+def test_a_metric_that_stopped_recently_is_a_risk_not_a_clear():
+    points = _flat(6)  # last point at 1575
+    stale = InspectionReadings(
+        points, 60.0, (), (), True, collected_at=points[-1][0] + 180)
+    risks = assess_risks(stale)
+    assert [(risk.check, risk.severity) for risk in risks] == [("connections", "high")]
+    assert "stopped 180 s ago" in risks[0].message
+    fresh = InspectionReadings(points, 60.0, (), (), True, collected_at=points[-1][0] + 5)
+    assert assess_risks(fresh) == []
+
+
+class _Cursor:
+    def __init__(self, fail_on):
+        self.fail_on = fail_on
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        return False
+
+    def execute(self, sql):
+        if self.fail_on in sql:
+            import pymysql
+            raise pymysql.err.OperationalError(2013, "Lost connection (timed out)")
+
+    def fetchall(self):
+        return []
+
+
+class _Connection:
+    def __init__(self, fail_on):
+        self.fail_on = fail_on
+        self.closed = False
+
+    def cursor(self):
+        return _Cursor(self.fail_on)
+
+    def close(self):
+        self.closed = True
+
+
+def _patch_sources(monkeypatch, connection):
+    monkeypatch.setattr(inspection, "_prometheus_series", lambda url, promql, end: list(_flat(6, start=0)))
+    monkeypatch.setattr(inspection, "_prometheus_value", lambda url, promql: 60.0)
+    monkeypatch.setattr(inspection, "open_diagnosis_connection", lambda access: (connection, "normal"))
+
+
+class _Access:
+    prometheus_url = "http://prometheus"
+
+
+def test_a_timeout_mid_collection_becomes_a_risk_and_the_connection_is_closed(monkeypatch):
+    connection = _Connection(fail_on="events_statements_summary_by_digest")
+    _patch_sources(monkeypatch, connection)
+    readings = inspection.collect_readings(_Access(), sleep=lambda seconds: None, now=lambda: 600.0)
+    assert connection.closed
+    assert readings.collection_error == "OperationalError"
+    assert any(risk.check == "inspection" and "half-way" in risk.message
+               for risk in assess_risks(readings))
+
+
+def test_a_complete_collection_closes_the_connection_and_reports_nothing_on_a_quiet_lab(monkeypatch):
+    connection = _Connection(fail_on="never")
+    _patch_sources(monkeypatch, connection)
+    readings = inspection.collect_readings(_Access(), sleep=lambda seconds: None, now=lambda: 580.0)
+    assert connection.closed and readings.collection_error is None
+    assert assess_risks(readings) == []
+
+
+def test_the_count_must_be_at_least_one():
+    import pytest
+    for count in ("0", "-1"):
+        with pytest.raises(SystemExit):
+            inspection.main(["--every", "60", "--count", count])

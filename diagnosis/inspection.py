@@ -20,6 +20,9 @@ import datetime
 import sys
 import time
 from dataclasses import dataclass
+from typing import Optional
+
+import pymysql
 
 from diagnosis.access import load_diagnosis_access
 from diagnosis.evidence import (
@@ -34,6 +37,9 @@ TREND_LOOKBACK_SECONDS = 600
 HIGH_USAGE_SHARE = 0.8
 TREND_HORIZON_MINUTES = 30
 MINIMUM_TREND_POINTS = 6
+# Prometheus scrapes every few seconds; a last point older than this means
+# the metric has stopped, which is a risk, not a clear.
+STALE_METRIC_SECONDS = 20
 LONG_TRANSACTION_SECONDS = 60
 VERY_LONG_TRANSACTION_SECONDS = 300
 MANY_LOCKED_ROWS = 10_000
@@ -59,6 +65,8 @@ class InspectionReadings:
     long_transactions: tuple  # LongTransaction
     statements: tuple  # evidence.StatementLoad over the digest window
     database_reachable: bool
+    collected_at: Optional[float] = None  # unix time; None only in tests that do not care
+    collection_error: Optional[str] = None  # error type when collection stopped half-way
 
 
 @dataclass(frozen=True)
@@ -84,11 +92,15 @@ def connections_per_minute(points):
     return slope_per_second * 60
 
 
-def assess_connections(points, max_connections):
+def assess_connections(points, max_connections, collected_at=None):
     if not points or not max_connections:
         return [Risk("connections", "high",
                      "the connection metric is missing, so connection use cannot be "
                      "checked; a metric that disappears is a warning sign, not a clear")]
+    if collected_at is not None and collected_at - points[-1][0] > STALE_METRIC_SECONDS:
+        return [Risk("connections", "high",
+                     f"the connection metric stopped {collected_at - points[-1][0]:.0f} s ago; "
+                     "a metric that disappears is a warning sign, not a clear")]
     current = points[-1][1]
     share = current / max_connections
     if share >= HIGH_USAGE_SHARE:
@@ -147,7 +159,12 @@ def assess_risks(readings):
         risks.append(Risk("inspection", "high",
                           "the database refused the inspection account, so transactions and "
                           "statements could not be checked"))
-    risks += assess_connections(readings.connection_points, readings.max_connections)
+    if readings.collection_error:
+        risks.append(Risk("inspection", "high",
+                          f"the inspection stopped half-way ({readings.collection_error}); "
+                          "a database too slow to answer is itself a risk"))
+    risks += assess_connections(readings.connection_points, readings.max_connections,
+                                readings.collected_at)
     risks += assess_long_transactions(readings.long_transactions)
     risks += assess_unindexed_statements(readings.statements)
     return sorted(risks, key=lambda risk: risk.severity != "high")
@@ -178,17 +195,23 @@ def collect_readings(access, digest_window_seconds=DIGEST_WINDOW_SECONDS, sleep=
         access.prometheus_url, "last_over_time(mysql_global_variables_max_connections[5m])")
     connection = open_diagnosis_connection(access)[0]
     if connection is None:
-        return InspectionReadings(points, max_connections, (), (), database_reachable=False)
+        return InspectionReadings(points, max_connections, (), (), database_reachable=False,
+                                  collected_at=end_time)
+    long_transactions = ()
     try:
         long_transactions = _read_long_transactions(connection)
         before = _digest_snapshot(connection)
         sleep(digest_window_seconds)
         after = _digest_snapshot(connection)
+    except pymysql.MySQLError as error:
+        return InspectionReadings(points, max_connections, long_transactions, (),
+                                  database_reachable=True, collected_at=end_time,
+                                  collection_error=type(error).__name__)
     finally:
         connection.close()
     return InspectionReadings(points, max_connections, long_transactions,
                               statement_loads(before, after, digest_window_seconds),
-                              database_reachable=True)
+                              database_reachable=True, collected_at=end_time)
 
 
 def render_risks(risks, checked_at):
@@ -214,6 +237,8 @@ def main(argument_list=None, sleep=time.sleep):
     arguments = parser.parse_args(argument_list)
     if arguments.every is not None and arguments.every < 30:
         parser.error("--every must be at least 30 seconds")
+    if arguments.count is not None and arguments.count < 1:
+        parser.error("--count must be at least 1")
     access = load_diagnosis_access(admin_port_available=True)
     runs = 0
     try:
