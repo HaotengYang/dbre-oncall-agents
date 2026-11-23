@@ -476,3 +476,26 @@ Why this one: 90 MB is well under the limit, it needs no PyTorch, and it is the
 most widely used small sentence-embedding model from the library's own
 publisher. Packages go in `requirements-vector.txt`, separate from the default
 install, so keyword retrieval still runs with no extra dependency.
+
+### Steps 4 to 8 (2026-11-22, evening)
+
+- Step 4 and 5: README "Real-world grounding", incident replays and the model
+  status; `AI_WORKFLOW.md` (80 lines). On `docs/submission`.
+- Step 6, E3: the first fresh clone was under `/tmp`; with Colima the bind
+  mounts were empty and MySQL never became healthy. README fixed (clone under
+  `~`), second clone passed: lab up, 667 unit tests, a lock-wait injection
+  diagnosed as `lock_wait`, quick set 4/5 with no false positive.
+- Step 7: tag `submittable-v1` on `docs/submission` (8eb16a3), pushed. Not on
+  `main`: merging these branches needs the owner's approval.
+- Step 8a `make demo` (`feat/demo`): 82 s end to end; cascade diagnosed as
+  `missing_index_slow_query` with the symptom, the gate rehearsed
+  `order_items(product_id, quantity)` at low risk. Review approved; verify passed.
+- Step 8b vector retrieval (`feat/vector-retrieval`): reworded queries hit@1
+  5/8 (keyword 3/8), hit@3 8/8 (keyword 6/8); queries worded like the runbooks
+  8/8 for both. Not tuned. Two review findings fixed; verify passed.
+- Step 8c inspection agent (`feat/inspection`): risks only; three review
+  findings fixed (stopped metric read as no risk, one error ended the loop,
+  `--count 0`); three lab tests pass; verify passed.
+
+Each feature branch is stacked on the previous one, so merging
+`feat/inspection` brings in all of them. Waiting for the owner's approval.

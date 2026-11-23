@@ -256,3 +256,17 @@ used and what it achieved.
   cases share an author with the rules. Effect: 1/2; the miss is a crash
   (an evidence query timed out at 0.05 CPU), found only because the scenario
   was harsher than anything in the original 22 cases.
+- 2026-11-22: **A fresh-clone check that failed for the right reason.** The
+  first E3 clone was under `/tmp`; Colima shares only the home directory, so
+  MySQL started with empty configuration and seed folders. Found by reading the
+  container's mounts, fixed in the README, second clone passed.
+- 2026-11-22: **The isolation test stopped a shortcut.** Vector retrieval first
+  stored its model under `var/`; the ground-truth isolation test refused it for
+  diagnosis code. The model moved to `models/`; the test was not weakened.
+- 2026-11-22: **One review round per feature still found real bugs.** Inspection
+  agent: a metric that had stopped a few minutes earlier was read as "no risk",
+  exactly the mistake the project's rules forbid. Vector retrieval: a test that
+  passed only because optional packages happened to be installed.
+- 2026-11-22: Claude committed staged files into the wrong commit while
+  splitting work; caught from the commit's file list before pushing and split
+  again.
