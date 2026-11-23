@@ -87,6 +87,14 @@ Rehearse an index change (nothing is changed by `plan`):
 risk, the index name for high risk; a change that cannot be built online is
 refused.
 
+Scheduled inspection (risks only, no diagnosis): connection trend, transactions
+open longer than a minute, and frequent statements that use no index.
+
+```bash
+.venv/bin/python -m diagnosis.inspection              # once
+.venv/bin/python -m diagnosis.inspection --every 300  # every five minutes, until Ctrl-C
+```
+
 ## Tests and evals
 
 | Command | What it runs | Time |
@@ -192,7 +200,7 @@ anonymised case), *mechanism demo* (a reproduction of the mechanism),
   server settings and could leave the lab broken if interrupted.
 - **One root cause per diagnosis.** Two independent faults can only be reported
   as `undetermined` or as one of them.
-- **The scheduled inspection agent was cut for time.**
+- **The inspection agent has no eval cases**; it is covered by unit tests and three lab tests only.
 - **Vector retrieval is optional and not the SOP default**; it still misses 3 of 8 reworded queries at rank 1.
 - **Primary/replica replication is out of scope.**
 - **The lab is small** (200,000 orders); a missing index shows as rows examined
