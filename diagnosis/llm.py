@@ -32,6 +32,9 @@ PRICES_PER_MILLION = {
     "claude-opus-5-5": (4.00, 20.00),
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-haiku-5-5": (0.10, 0.50),
+    # Google's Gemini API price list (ai.google.dev/gemini-api/docs/pricing,
+    # read 2026-11-22): introductory standard-tier price, valid to 2026-12-31.
+    "gemini-3.8-flash": (0.75, 3.75),
 }
 
 FAULT_LABELS = ("missing_index_slow_query", "lock_wait", "connection_exhaustion")

@@ -41,8 +41,11 @@ SPEND_LEDGER_PATH = STATE_DIRECTORY / "model_spend.json"
 REPORTS_SUBDIRECTORY = STATE_DIRECTORY / "reports"
 
 # Approved by the owner on 2026-11-21 (option A of docs/proposals/C4-models-and-budget.md).
-APPROVED_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
-SPENDING_CAP_USD = 40.00
+# Owner's approval, 2026-11-22: these four, cheapest first, 10 USD in total.
+APPROVED_MODELS = ("gemini-3.8-flash", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")
+SPENDING_CAP_USD = 10.00
+CALIBRATION_CALLS = 10
+RATE_LIMIT_WAITS_SECONDS = (5, 10, 20, 40, 60, 60, 60, 60)
 # Used until a model's own calls give a measured average.
 ESTIMATED_INPUT_TOKENS = 4_000
 ESTIMATED_OUTPUT_TOKENS = 2_000
@@ -221,8 +224,59 @@ PERSISTENT_ERROR_NAMES = ("AuthenticationError", "PermissionDeniedError", "NotFo
                           "BadRequestError")
 
 
+class ModelClients:
+    """One client per provider, chosen by model name. A provider without a
+    key is simply absent, and its models are skipped."""
+
+    def __init__(self, anthropic_client=None, gemini_client=None):
+        self.anthropic_client = anthropic_client
+        self.gemini_client = gemini_client
+
+    def available(self, model):
+        return (self.gemini_client if model.startswith("gemini-") else self.anthropic_client) is not None
+
+    def ask(self, model, alert_text, evidence):
+        if model.startswith("gemini-"):
+            from diagnosis.llm_openai_compatible import ask_openai_compatible
+            return ask_openai_compatible(self.gemini_client, model, alert_text, evidence)
+        return ask_model(self.anthropic_client, model, alert_text, evidence)
+
+
+# Refusals sent before any work is done, so nothing is billed: a rate limit
+# (429) and an overloaded model (503 from Gemini, 529 from Anthropic).
+WAIT_AND_RETRY_STATUS_CODES = (429, 503, 529)
+
+
+def _is_wait_and_retry(error):
+    return (type(error).__name__ in ("RateLimitError", "OverloadedError")
+            or getattr(error, "status_code", None) in WAIT_AND_RETRY_STATUS_CODES)
+
+
+class WaitsExhausted(Exception):
+    """Still rate-limited or overloaded after every wait. Nothing was billed;
+    the model is skipped for the rest of the run."""
+
+
+def _ask_with_rate_limit_waits(client, model, alert_text, evidence, sleep):
+    """A rate-limited or overloaded request is refused before any work is
+    billed, so it is waited out and sent again; it is not counted as a
+    failure. A timeout is not retried: it may have been billed."""
+    ask = client.ask if hasattr(client, "ask") else (
+        lambda model_name, alert, recorded: ask_model(client, model_name, alert, recorded))
+    for wait_seconds in (*RATE_LIMIT_WAITS_SECONDS, None):
+        try:
+            return ask(model, alert_text, evidence)
+        except Exception as failed:
+            if not _is_wait_and_retry(failed):
+                raise
+            if wait_seconds is None:
+                raise WaitsExhausted(f"{type(failed).__name__} after every wait") from failed
+            sleep(wait_seconds)
+
+
 def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledger=None,
-           max_calls=None, recordings_directory=RECORDINGS_DIRECTORY, on_result=None):
+           max_calls=None, recordings_directory=RECORDINGS_DIRECTORY, on_result=None,
+           calibration_calls=None, sleep=time.sleep):
     """Replays each case's recorded evidence to the rule engine (once; it is
     deterministic) and to each model (repeats times).
 
@@ -243,11 +297,25 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
         results.append(ReplayResult("rule_engine", 1,
                                     _scored(case, rule_answer, time.monotonic() - started_at), 0.0))
     calls_made = 0
+    skipped_models = {}  # model -> why it was dropped; the others carry on
+    calls_by_model = {model: 0 for model in models}
+    planned_by_model = {model: repeats * len(recorded) for model in models}
     for repeat in range(1, repeats + 1):
         for case, evidence in recorded:
             for model in models:
+                if model in skipped_models:
+                    continue
                 if max_calls is not None and calls_made >= max_calls:
                     return results, f"stopped after the requested {max_calls} model calls"
+                if calibration_calls and calls_by_model[model] == calibration_calls:
+                    remaining = sum(ledger.estimated_next_cost(name)
+                                    * (planned_by_model[name] - calls_by_model[name])
+                                    for name in models)
+                    if ledger.total_usd + remaining > ledger.cap_usd:
+                        return results, (
+                            f"cost calibration after {calibration_calls} {model} calls: the rest "
+                            f"would cost about {remaining:.2f} USD on top of "
+                            f"{ledger.total_usd:.2f} spent, over the {ledger.cap_usd:.2f} USD cap")
                 try:
                     ledger.check_room_for(model)
                 except BudgetExhausted as exhausted:
@@ -255,15 +323,21 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
                 started_at = time.monotonic()
                 cost = 0.0
                 try:
-                    diagnosis, model_call = ask_model(client, model, case.alert, evidence)
+                    diagnosis, model_call = _ask_with_rate_limit_waits(
+                        client, model, case.alert, evidence, sleep)
                     case_result = _scored(case, diagnosis, model_call.seconds)
                 except ModelAnswerError as failed:
                     model_call = failed.call
                     case_result = _no_answer(case, str(failed), time.monotonic() - started_at)
-                except Exception as failed:  # network, timeout, rate limit, API error
+                except WaitsExhausted as exhausted:
+                    skipped_models[model] = f"{model}: {exhausted}; skipped, nothing charged"
+                    continue
+                except Exception as failed:  # network, timeout, API error
                     if type(failed).__name__ in PERSISTENT_ERROR_NAMES:
-                        return results, (f"{model}: {type(failed).__name__}; every later call "
-                                         "would fail the same way, so the run stopped")
+                        skipped_models[model] = (
+                            f"{model}: {type(failed).__name__}; every later call would fail "
+                            "the same way, so this model was skipped")
+                        continue
                     model_call = None
                     cost = ledger.add_unknown_cost(model, case.case_id)
                     case_result = _no_answer(
@@ -271,13 +345,22 @@ def replay(cases, client, models=APPROVED_MODELS, repeats=DEFAULT_REPEATS, ledge
                               f"{cost:.3f} USD, since its real cost is unknown)",
                         time.monotonic() - started_at)
                 calls_made += 1
+                calls_by_model[model] += 1
                 if model_call is not None:
                     ledger.add(model_call, case.case_id)
                     cost = model_call.cost_usd
+                    if model_call.output_tokens > MAX_OUTPUT_TOKENS:
+                        # The worst-case pre-check assumed output is capped;
+                        # if a provider exceeds it, stop before trusting it again.
+                        return results, (
+                            f"{model} returned {model_call.output_tokens} output tokens, above "
+                            f"the {MAX_OUTPUT_TOKENS} the cost check assumes; run stopped")
                 replay_result = ReplayResult(model, repeat, case_result, cost)
                 results.append(replay_result)
                 if on_result is not None:
                     on_result(replay_result)
+    if skipped_models:
+        return results, "; ".join(skipped_models.values())
     return results, None
 
 
@@ -386,6 +469,38 @@ def replay_results_as_json(results, stop_reason=None):
             for r in results
         ],
     }
+
+
+def _read_env_values(env_path):
+    values = {}
+    for line in env_path.read_text().splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            name, _, value = stripped.partition("=")
+            values[name.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def load_model_clients(env_path=None):
+    """Clients for every provider whose key is in .env. Keys stay out of the
+    process environment and are never printed. No automatic retries (a
+    retried timeout can be billed twice while the ledger counts one call);
+    rate limits are waited out by replay itself."""
+    from eval_runner.cli import EVALS_DIRECTORY
+
+    env_path = env_path or EVALS_DIRECTORY.parent / ".env"
+    values = _read_env_values(env_path) if env_path.exists() else {}
+    anthropic_client = gemini_client = None
+    if values.get("ANTHROPIC_API_KEY"):
+        anthropic_client = load_api_client(env_path)
+    if values.get("GEMINI_API_KEY"):
+        import openai
+
+        from diagnosis.llm_openai_compatible import GEMINI_OPENAI_BASE_URL
+        gemini_client = openai.OpenAI(api_key=values["GEMINI_API_KEY"],
+                                      base_url=GEMINI_OPENAI_BASE_URL,
+                                      max_retries=0, timeout=180.0)
+    return ModelClients(anthropic_client, gemini_client)
 
 
 def load_api_client(env_path=None):
