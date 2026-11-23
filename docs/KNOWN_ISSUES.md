@@ -206,3 +206,9 @@ One review round. Left as known:
   `max_connections` passed, Error 1040) come from the indexed text. An earlier
   note in the case said "degraded RDS hardware"; that could not be verified and
   was removed (the `notes` field only; nothing scored changed).
+
+## Live demo (`make demo`, 2026-11-22)
+
+One review round, approved. Left as known: if the final `clear` itself fails
+(MySQL unreachable), its error replaces the original one on screen. The fault
+has already been stopped by then; only the first message is lost.

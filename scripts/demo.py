@@ -69,6 +69,9 @@ def run_demo(sleep=time.sleep):
     report = None
     try:
         banner(1, "Startup check: is the lab at its healthy baseline?")
+        # A claim left by a killed earlier run would refuse the injection.
+        for action in clear_lab():
+            print(f"  {action}")
         wait_for_lab_baseline()
         print("Lab is healthy: MySQL, Prometheus, exporter and workload all at baseline.")
 

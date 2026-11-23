@@ -52,7 +52,7 @@ def test_the_demo_injects_diagnoses_stops_rehearses_the_suggestion_and_clears(de
 
     assert demo.run_demo(sleep=lambda seconds: None) == 0
 
-    assert demo.events == ["baseline", f"inject {demo.DEMO_FAULT_ID}", "diagnose",
+    assert demo.events == ["clear", "baseline", f"inject {demo.DEMO_FAULT_ID}", "diagnose",
                            "fault stopped", "baseline", "clear"]
     assert planned == [("order_items", ("product_id",), demo.TARGET_QUERY)]
 
