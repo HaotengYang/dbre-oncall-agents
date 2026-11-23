@@ -66,12 +66,10 @@ multi-agent diagnosis system; this is a small, measurable version of both.
 - It first misread the role as Data Engineer; I corrected it from interview notes.
 - It merged a branch into `main` without my approval, then undid it before
   pushing and told me; merging now needs my explicit approval (`CLAUDE.md`).
-- It reported a result from a script whose patch had not applied; caught by
-  reading the output, not the summary line.
+- It reported a run whose patch had not applied; caught by reading the output.
 - It wrote "degraded RDS hardware" as the Honeycomb cause; a source check
   could not confirm it, and the claim was removed.
-- Tests that could not fail (timing checks after a helper that already enforced
-  them) were found by the reviewer and rewritten.
+- Tests that could not fail were found by the reviewer and rewritten.
 
 ## Known limits
 
