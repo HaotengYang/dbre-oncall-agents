@@ -93,7 +93,8 @@ refused.
 | `python -m eval_runner run --set incidents` | The 2 incident replays (no thresholds) | about 4 minutes |
 | `python -m eval_runner record --set all` | Runs all 22 cases and saves the evidence for replay | about 40 minutes |
 | `python -m eval_runner replay` | Gives recorded evidence to the approved models; costs money, capped | depends |
-| `python -m eval_runner retrieval` | Runbook retrieval hit rates | seconds |
+| `python -m eval_runner retrieval` | Runbook retrieval hit rates (keyword) | seconds |
+| `python -m eval_runner retrieval --retriever compare` | Keyword and vector retrieval side by side (needs the optional install below) | about 10 seconds |
 
 Thresholds (owner's decision): basic tier 6/6, hard tier at least 5/8, no
 false positives; the quick set allows no false positive and at most one miss.
@@ -114,8 +115,17 @@ The rule engine was frozen before the holdout set existed and was not changed
 for it. Its value is as a no-API-key fallback and a regression gate, not as
 evidence that rules generalise.
 
-Runbook retrieval (keyword, BM25): 8/8 at rank 1 for queries worded like the
-runbooks, 3/8 for queries worded differently.
+Runbook retrieval, same 16 queries, nothing tuned:
+
+| Queries | Keyword (BM25), hit@1 / hit@3 | Vector (all-MiniLM-L6-v2, local), hit@1 / hit@3 |
+|---|---|---|
+| Worded like the runbooks (8) | 8/8 / 8/8 | 8/8 / 8/8 |
+| Worded differently (8) | 3/8 / 6/8 | 5/8 / 8/8 |
+
+Vector retrieval is optional and runs locally, with no API call:
+`.venv/bin/pip install -r requirements-vector.txt`, then
+`.venv/bin/python scripts/fetch_embedding_model.py` (90 MB, pinned revision and
+hash). Keyword retrieval stays the default for the SOP step.
 
 ### Model comparison: not run
 
@@ -175,7 +185,7 @@ anonymised case), *mechanism demo* (a reproduction of the mechanism),
 - **One root cause per diagnosis.** Two independent faults can only be reported
   as `undetermined` or as one of them.
 - **The scheduled inspection agent was cut for time.**
-- **Vector retrieval was not built**; keyword retrieval misses most reworded alerts.
+- **Vector retrieval is optional and not the SOP default**; it still misses 3 of 8 reworded queries at rank 1.
 - **Primary/replica replication is out of scope.**
 - **The lab is small** (200,000 orders); a missing index shows as rows examined
   and CPU, not as multi-second queries.

@@ -192,13 +192,29 @@ def retrieval_command(arguments):
     from diagnosis.retrieval import KeywordRetriever
     from eval_runner.retrieval_eval import (
         evaluate_retriever,
+        format_retrieval_comparison,
         format_retrieval_report,
         load_retrieval_queries,
     )
 
     queries = load_retrieval_queries(EVALS_DIRECTORY / "retrieval" / "queries.json")
-    retriever = KeywordRetriever()
-    print(format_retrieval_report(retriever.name, evaluate_retriever(retriever, queries)))
+    retrievers = []
+    if arguments.retriever in ("keyword", "compare"):
+        retrievers.append(KeywordRetriever())
+    if arguments.retriever in ("vector", "compare"):
+        from diagnosis.vector_retrieval import EmbeddingModelMissing, VectorRetriever
+        try:
+            retrievers.append(VectorRetriever())
+        except EmbeddingModelMissing as missing:
+            print(f"error: {missing}", file=sys.stderr)
+            return 2
+    rows_by_name = {}
+    for retriever in retrievers:
+        rows_by_name[retriever.name] = evaluate_retriever(retriever, queries)
+        print(format_retrieval_report(retriever.name, rows_by_name[retriever.name]))
+        print()
+    if len(rows_by_name) > 1:
+        print(format_retrieval_comparison(rows_by_name))
     return 0
 
 
@@ -239,7 +255,10 @@ def main(argument_list=None):
     replay_parser.add_argument("--repeats", type=int, default=5)
     replay_parser.add_argument("--max-calls", type=int, default=None,
                                help="stop after this many model calls (for cost calibration)")
-    commands.add_parser("retrieval", help="runbook retrieval hit rates (no lab needed)")
+    retrieval_parser = commands.add_parser("retrieval", help="runbook retrieval hit rates (no lab needed)")
+    retrieval_parser.add_argument(
+        "--retriever", choices=("keyword", "vector", "compare"), default="keyword",
+        help="keyword (default), vector (needs requirements-vector.txt and the model), or both side by side")
     arguments = parser.parse_args(argument_list)
     try:
         return {"run": run_command, "report": report_command, "record": record_command,

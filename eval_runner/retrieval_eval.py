@@ -49,3 +49,19 @@ def format_retrieval_report(retriever_name, rows):
               f"hit@3 {summary['mismatch_hit_at_3'].text()}",
               f"all: hit@1 {summary['all_hit_at_1'].text()}, hit@3 {summary['all_hit_at_3'].text()}"]
     return "\n".join(lines)
+
+
+def format_retrieval_comparison(rows_by_name):
+    """Hit rates of several retrievers on the same queries, side by side."""
+    names = list(rows_by_name)
+    summaries = {name: summarize_retrieval(rows) for name, rows in rows_by_name.items()}
+    lines = ["RETRIEVAL COMPARISON (same queries)", "",
+             f"{'queries':28}" + "".join(f"  {name:>16}" for name in names)]
+    for label, key in (("like the runbooks, hit@1", "matching_hit_at_1"),
+                       ("like the runbooks, hit@3", "matching_hit_at_3"),
+                       ("unlike the runbooks, hit@1", "mismatch_hit_at_1"),
+                       ("unlike the runbooks, hit@3", "mismatch_hit_at_3"),
+                       ("all, hit@1", "all_hit_at_1"),
+                       ("all, hit@3", "all_hit_at_3")):
+        lines.append(f"{label:28}" + "".join(f"  {summaries[name][key].text():>16}" for name in names))
+    return "\n".join(lines)
