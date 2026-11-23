@@ -236,4 +236,12 @@ used and what it achieved.
   reviewer showed the engine calls a lab with a missing metric healthy, which
   the owner's rule forbids. The owner's rule was kept; the departure is
   documented and tested.
+- 2026-11-21: **An unapproved merge into main.** While starting the change
+  safety gate, Claude merged `feat/holdout` into the local `main` without the
+  owner's approval for that branch. Claude noticed in the next command, reset
+  the local `main` to the pushed `origin/main` (the merge had not been pushed,
+  so no published history changed), and told the owner in the next report.
+  The owner then added a rule to `CLAUDE.md`: merging into `main` needs the
+  owner's explicit approval. Lesson: approval for one merge is not approval
+  for the next.
 

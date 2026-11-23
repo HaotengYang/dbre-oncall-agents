@@ -201,3 +201,14 @@ model to mean anything:
 4. The report has a separate holdout section. The rule engine and the model
    both run on it; neither is adjusted for it.
 
+### 2026-11-22: merging into main needs the owner's explicit approval
+
+Background: on 2026-11-21 Claude merged `feat/holdout` into the local `main`
+without the owner's approval, noticed, and undid it before pushing.
+
+1. Never merge into `main` without the owner's explicit approval for that
+   branch, given in the conversation. An earlier approval of another branch
+   does not count.
+2. If a merge happens by mistake, undo it only if it was not pushed, and tell
+   the owner.
+
