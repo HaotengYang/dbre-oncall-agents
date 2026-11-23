@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 
 from diagnosis.access import load_diagnosis_access
-from diagnosis.evidence import collect_evidence
+from diagnosis.evidence import EvidenceCollectionFailed, collect_evidence
 from diagnosis.llm import (
     MAX_OUTPUT_TOKENS,
     ModelAnswerError,
@@ -75,7 +75,9 @@ def record_cases(cases, recordings_directory=RECORDINGS_DIRECTORY, on_result=Non
             # Nothing is recorded for replay, since there is no evidence.
             try:
                 evidence = collect_evidence(access)
-            except Exception as collection_error:
+            except EvidenceCollectionFailed as collection_error:
+                # Only a failed database read; a programming error still
+                # scores as diagnosis_error, so it cannot hide.
                 return undetermined_after_failed_collection(collection_error)
             captured["evidence"] = evidence
             return decide(evidence)

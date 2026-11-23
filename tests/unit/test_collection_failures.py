@@ -126,3 +126,38 @@ def test_the_recording_run_scores_a_failed_collection_as_undetermined_and_record
     assert answers[0].root_cause == UNDETERMINED
     assert "escalate to a human" in answers[0].rationale
     assert list(tmp_path.iterdir()) == []
+
+
+def test_the_default_rule_engine_backend_answers_undetermined_on_a_failed_read(monkeypatch):
+    from diagnosis import engine
+
+    def failing_collect(access):
+        raise EvidenceCollectionFailed("sampling sessions and lock waits", TIMEOUT)
+
+    monkeypatch.setattr(engine, "collect_evidence", failing_collect)
+    verdict = engine.diagnose_with_rules("Everything is slow.", None)
+    assert verdict.root_cause == UNDETERMINED and "escalate to a human" in verdict.rationale
+
+
+def test_a_programming_error_in_collection_is_not_hidden_as_undetermined(monkeypatch):
+    from diagnosis import engine
+
+    def broken_collect(access):
+        raise AttributeError("refactoring mistake")
+
+    monkeypatch.setattr(engine, "collect_evidence", broken_collect)
+    with pytest.raises(AttributeError):
+        engine.diagnose_with_rules("Everything is slow.", None)
+
+
+def test_undetermined_on_the_honeycomb_replay_is_scored_acceptable_not_a_failure():
+    import pathlib
+
+    from eval_runner.cases import load_case
+    from eval_runner.scoring import classify_outcome
+
+    case_path = (pathlib.Path(__file__).resolve().parents[2] / "evals" / "incident-replays"
+                 / "incident-honeycomb-2018-05.json")
+    verdict = undetermined_after_failed_collection(
+        EvidenceCollectionFailed("sampling sessions and lock waits", TIMEOUT))
+    assert classify_outcome(load_case(case_path), verdict.root_cause) == "acceptable"
