@@ -122,7 +122,7 @@ false positives; the quick set allows no false positive and at most one miss.
 | Basic (8 cases) | 6/6 | 0/2 |
 | Hard (10 cases) | 5/8 and 6/8 in two runs | 0/2 |
 | Holdout (4 cases) | 1/3 | 0/1 |
-| Incident replays (2 cases) | 1/2 | none in the set |
+| Incident replays (2 cases), after the crash fix | GitHub: hit; Honeycomb: acceptable (`run`) and hit (`record`) | none in the set |
 
 **Read the gap between the basic tier and the holdout set first.** The rule
 engine and the 18 original cases were written by the same author, and it shows:
@@ -130,6 +130,10 @@ engine and the 18 original cases were written by the same author, and it shows:
 The rule engine was frozen before the holdout set existed and was not changed
 for it. Its value is as a no-API-key fallback and a regression gate, not as
 evidence that rules generalise.
+
+The Honeycomb replay is **no longer a blind test**: its first run exposed a
+crash, the crash was fixed, and the later results come after that fix (see
+Incident replays below).
 
 Runbook retrieval, same 16 queries, nothing tuned:
 
@@ -142,6 +146,18 @@ Vector retrieval is optional and runs locally, with no API call:
 `.venv/bin/pip install -r requirements-vector.txt`, then
 `.venv/bin/python scripts/fetch_embedding_model.py` (90 MB, pinned revision and
 hash). Keyword retrieval stays the default for the SOP step.
+
+**`make demo`** runs the whole chain live in about a minute and a half (82 s
+measured): the cascade fault was diagnosed as `missing_index_slow_query` with
+`connection_exhaustion` as its symptom, and the change gate rehearsed the
+suggested `order_items(product_id, quantity)` at low risk, with the target
+query using the new index on the sample.
+
+**Inspection agent** (`python -m diagnosis.inspection`): lists risks only, no
+root cause. Lab tests: an idle transaction holding about 50,000 row locks is
+listed as high risk once it is a minute old, a frequent unindexed query on
+`order_items` is listed, and the quiet baseline shows neither. A connection
+metric that stops is reported as a risk, never as a clear.
 
 ### Model comparison: not run
 
@@ -160,7 +176,7 @@ reworded, not quoted.
 | Case | Source | What the lab does | Expected | Rule engine |
 |---|---|---|---|---|
 | `incident-github-2022-03` | [GitHub, 2022-03](https://github.blog/news-insights/company-news/an-update-on-recent-service-disruptions/) | The index behind the order-history query is gone; at peak, each new request opens a connection and runs the now-scanning query until connections run out | `missing_index_slow_query`, symptom `connection_exhaustion` | hit, symptom and index named |
-| `incident-honeycomb-2018-05` | [Honeycomb, 2018-05](https://honeycomb.io/blog/rds-performance-degradation-postmortem) | MySQL's CPU limit drops to 0.05 while clients keep opening connections | `connection_exhaustion` (`undetermined` acceptable) | no answer: an evidence query timed out (`diagnosis_error`) |
+| `incident-honeycomb-2018-05` | [Honeycomb, 2018-05](https://honeycomb.io/blog/rds-performance-degradation-postmortem) | MySQL's CPU limit drops to 0.05 while clients keep opening connections | `connection_exhaustion` (`undetermined` acceptable) | first run: crash, an evidence query timed out (`diagnosis_error`); after the fix: `undetermined` (acceptable) in `run`, hit in `record`. **Not blind any more.** |
 
 How the Honeycomb case differs from the incident: there, the managed RDS
 MySQL instance itself degraded suddenly (P95 query time from 11 ms to over
@@ -170,9 +186,13 @@ managed instance, so it starves the server of CPU, the closest way to make
 every query slow at once without changing any query or index. The expected answer is `connection_exhaustion`
 because that is what the evidence shows from inside: no missing index, no lock
 wait, the server full. `undetermined` is also accepted, since the real cause
-lies outside the closed label set (the same rule as holdout case H1). The
-diagnosis crashed instead of answering; this is listed in
-`docs/KNOWN_ISSUES.md` and was not fixed for the replay.
+lies outside the closed label set (the same rule as holdout case H1). On its
+first run the diagnosis crashed: at 0.05 CPU an evidence query timed out and
+the error escaped. None of the 22 synthetic cases had reached that path. It
+was fixed as error handling, not as a rule change (the frozen rules are
+untouched): a failed read now answers `undetermined`, names the read that
+failed and why, and asks for a human. Because this case prompted the fix, its
+later results do not count as a blind test.
 
 ## Real-world grounding
 
