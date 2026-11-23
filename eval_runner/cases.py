@@ -7,7 +7,7 @@ from typing import Optional
 
 FAULT_LABELS = ("missing_index_slow_query", "lock_wait", "connection_exhaustion")
 ANSWER_LABELS = FAULT_LABELS + ("healthy", "undetermined")
-TIERS = ("basic", "hard")
+TIERS = ("basic", "hard", "holdout")
 KINDS = (
     "single_fault", "healthy", "healthy_lookalike", "cascade",
     "incomplete_evidence", "hostile_input", "metrics_gap",

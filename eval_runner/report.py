@@ -45,7 +45,13 @@ def _rate_lines(summary):
 
 def format_report(results, backend_name, aborted_reason=None):
     sections = [LAYER_HEADING, f"backend: {backend_name}", ""]
-    for tier in ("basic", "hard"):
+    tier_headings = {
+        "basic": "BASIC TIER",
+        "hard": "HARD TIER",
+        "holdout": "HOLDOUT (designed without sight of the rule engine; no thresholds; "
+                   "not included in ALL CASES)",
+    }
+    for tier in ("basic", "hard", "holdout"):
         tier_results = [r for r in results if r.case.tier == tier]
         if not tier_results:
             continue
@@ -53,10 +59,13 @@ def format_report(results, backend_name, aborted_reason=None):
         for r in tier_results:
             rows.append((r.case.case_id, r.case.kind, r.case.expected_root_cause,
                          r.answered_root_cause, r.outcome, f"{r.seconds_taken:.1f}"))
-        sections += [f"{tier.upper()} TIER", _table(rows), ""]
+        sections += [tier_headings[tier], _table(rows), ""]
         sections += [_table([("number", "value", "meaning")] + _rate_lines(summarize(results, tier))), ""]
 
-    sections += ["ALL CASES", _table([("number", "value", "meaning")] + _rate_lines(summarize(results))), ""]
+    non_holdout = [r for r in results if r.case.tier != "holdout"]
+    if non_holdout:
+        sections += ["ALL CASES (basic and hard)",
+                     _table([("number", "value", "meaning")] + _rate_lines(summarize(non_holdout))), ""]
     no_answer = [r for r in results if r.outcome == "diagnosis_error"]
     if no_answer:
         sections.append("NO ANSWER (the backend failed; counted against the hit rate, "
@@ -113,7 +122,8 @@ def results_as_json(results, backend_name, aborted_reason=None):
         "summary": {
             "basic": summary_json(summarize(results, "basic")),
             "hard": summary_json(summarize(results, "hard")),
-            "all": summary_json(summarize(results)),
+            "holdout": summary_json(summarize(results, "holdout")),
+            "all": summary_json(summarize([r for r in results if r.case.tier != "holdout"])),
         },
     }
 

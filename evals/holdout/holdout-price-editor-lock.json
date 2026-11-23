@@ -1,0 +1,14 @@
+{
+  "id": "holdout-price-editor-lock",
+  "tier": "holdout",
+  "kind": "single_fault",
+  "scenario": "lock_wait.products_row_lock",
+  "observe_seconds": 40,
+  "admin_port_available": true,
+  "alert": "Saving a price in the back-office tool spins and then errors out. Customers on the storefront see nothing wrong.",
+  "expected": {
+    "root_cause": "lock_wait",
+    "also_acceptable": [],
+    "symptoms": []
+  }
+}

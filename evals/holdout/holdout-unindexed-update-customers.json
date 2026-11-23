@@ -1,0 +1,22 @@
+{
+  "id": "holdout-unindexed-update-customers",
+  "tier": "holdout",
+  "kind": "cascade",
+  "scenario": "cascade.unindexed_update_blocks_writers",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "The profile-sync job that normally finishes in seconds has been stuck for minutes. The storefront is unaffected.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [],
+    "symptoms": [
+      "lock_wait"
+    ],
+    "index": {
+      "table": "customers",
+      "columns": [
+        "full_name"
+      ]
+    }
+  }
+}

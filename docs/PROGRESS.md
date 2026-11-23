@@ -61,8 +61,11 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 - [x] C3. Orchestrator, report and `python -m diagnosis` CLI. Reviewed twice
 - [ ] C4. Connect the LLM; owner approves model list and budget first; then
       multi-model comparison
-- [ ] C5. SOP retrieval: ten runbooks, keyword and vector, hit-rate comparison
-- [ ] C6. Inspection agent
+- [x] C5. SOP retrieval: ten runbooks, keyword retrieval (BM25). Rank-1 hits:
+      8/8 for matching wording, 3/8 for reworded alerts. Vector deferred
+- [~] C6. Inspection agent: CUT FOR TIME (owner, 2026-11-21). The deadline is
+      Monday; the owner chose the holdout set, the model comparison and keyword
+      retrieval over a scheduled inspection agent, which no eval case measures
 
 ### D. Change safety gate
 
@@ -364,4 +367,54 @@ threshold was then raised from 5/6 to 6/6.
 Orchestrator lab tests: 3 of 3 pass (lock wait in one round; locked out
 without the admin port escalates after three rounds with the exhaustion
 symptom; the CLI's JSON report on a healthy lab).
+
+## Owner decisions, 2026-11-21 (after C3)
+
+- C4: Opus 5.5, Sonnet 5.5, Haiku 5.5; spending cap 40 USD. The Anthropic
+  Python SDK was installed into the project's `.venv` with the owner's consent.
+- Holdout: only H1, H4, H5, H6. H2 (two unrelated faults) and H3 (read-only
+  server) are not built; they go into the README's limitations. H1's answer is
+  `connection_exhaustion` with `undetermined` acceptable; H4 is accepted if its
+  completion criterion 12 passes; H6 is `healthy`. Holdout cases live in their
+  own directory and set, with no thresholds.
+- Quick set: a healthy case answered `undetermined` counts toward the "at most
+  one miss" allowance, not as a false positive.
+- The orchestrator's refusal of "healthy" with missing metrics is accepted; the
+  report must say that the orchestrator and the rule engine differ there.
+- C6 inspection agent cut for time.
+
+## Holdout set and the rule-engine run on full plus holdout (2026-11-21)
+
+Rule engine, end to end, one run per case (`--set all`):
+
+| Tier | Hit rate | False positives | Other |
+|---|---|---|---|
+| Basic | 100.0% (6/6) | 0.0% (0/2) | index suggestion 2/2 |
+| Hard | 62.5% (5/8) | 0.0% (0/2) | symptom as cause 0/2; 2 acceptable undetermined; 1 miss |
+| Holdout | 33.3% (1/3) | 0.0% (0/1) | symptom as cause 1/1; index suggestion 0/1 |
+
+Hard-tier miss: `hard-early-long-transaction` answered `healthy` three
+seconds into the fault, before any blocked update had been caught waiting.
+The hard tier sits exactly at its threshold of 5/8.
+
+Holdout, case by case:
+
+| Case | Expected | Rule engine | Outcome |
+|---|---|---|---|
+| holdout-stuck-active-sessions | connection_exhaustion | undetermined | acceptable |
+| holdout-unindexed-update-customers | missing_index_slow_query (symptom lock_wait) | lock_wait | symptom as cause |
+| holdout-price-editor-lock | lock_wait | lock_wait | hit |
+| holdout-lookalike-bigger-pool | healthy | undetermined | undetermined on healthy |
+
+The gap between the basic tier (written by the rules' author) and the holdout
+set is what the owner predicted. The rule engine is frozen and was not changed.
+
+The four holdout scenarios also pass the injector's common lab tests (20 of 20).
+
+Second end-to-end rule-engine run (the recording run for C4, same day): basic
+6/6, hard 6/8, holdout 1/3, no false positives. The only difference from the
+first run is `hard-early-long-transaction`, a hit this time and a miss before:
+three seconds into a fault, whether a blocked update has been caught waiting
+is chance. Evidence for all 22 cases is recorded in `var/recordings/` (not in
+git) and ready for replay.
 

@@ -3,3 +3,4 @@ PyMySQL==1.1.1
 cryptography==43.0.3
 prometheus-client==0.21.0
 requests==2.32.3
+anthropic==2.12.0
