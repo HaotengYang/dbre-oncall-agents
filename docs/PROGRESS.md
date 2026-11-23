@@ -430,3 +430,72 @@ that the sample copy took shared row locks on production rows under the
 default isolation level, and that the target-query EXPLAIN lacked the
 read-only session and timeout the diagnosis side uses.
 
+
+## Sunday evening plan (owner, 2026-11-22 21:05)
+
+### Step 2: model comparison: not run
+
+No API key of any provider is in `.env`. Per the owner's instruction the step
+was skipped: the model path is implemented and unit-tested, the full comparison
+was not run for cost control, the recorded evidence is kept locally
+(`var/recordings/`), and with a key in `.env` one command reproduces it
+(`python -m eval_runner replay`). Spend: 0 USD.
+
+### Step 3: incident replays (`evals/incident-replays/`)
+
+Two cases built from public postmortems, run like the holdout set: no tuning,
+no thresholds, a separate report section, not part of ALL CASES. One review
+round; its must-fix findings were fixed in their own commit.
+
+Rule engine, end to end (recording run, 2026-11-22 21:13 PST):
+
+| Case | Expected | Answered | Outcome |
+|---|---|---|---|
+| incident-github-2022-03 | missing_index_slow_query (symptom connection_exhaustion) | missing_index_slow_query, symptom listed, index correct | hit |
+| incident-honeycomb-2018-05 | connection_exhaustion (undetermined acceptable) | no answer: `OperationalError 2013 ... (timed out)` | diagnosis_error |
+
+The Honeycomb simulation lowers MySQL's CPU limit to 0.05 while clients keep
+opening connections. The diagnosis account's own evidence query timed out and
+the error escaped instead of becoming an undetermined round. This is recorded,
+not fixed: the replay set is not tuned to (KNOWN_ISSUES.md).
+
+## Step 8b: vector retrieval with a local embedding model (2026-11-22)
+
+Written before anything was installed (owner's condition: model under 500 MB
+from a reputable Hugging Face publisher, otherwise skip).
+
+| Item | Value |
+|---|---|
+| Python packages | `onnxruntime` 1.32.0 (about 22 MB wheel), `tokenizers` 0.23.3 (about 3 MB), `numpy` 2.4.6 (the newest for Python 3.11) |
+| Model | `sentence-transformers/all-MiniLM-L6-v2`, revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, Apache-2.0 |
+| Files downloaded | `onnx/model.onnx` (90.4 MB), `tokenizer.json` (0.5 MB) |
+| Source | https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 (publisher: the sentence-transformers project) |
+| API calls | none; the model runs locally, offline after the one download |
+
+Why this one: 90 MB is well under the limit, it needs no PyTorch, and it is the
+most widely used small sentence-embedding model from the library's own
+publisher. Packages go in `requirements-vector.txt`, separate from the default
+install, so keyword retrieval still runs with no extra dependency.
+
+### Steps 4 to 8 (2026-11-22, evening)
+
+- Step 4 and 5: README "Real-world grounding", incident replays and the model
+  status; `AI_WORKFLOW.md` (80 lines). On `docs/submission`.
+- Step 6, E3: the first fresh clone was under `/tmp`; with Colima the bind
+  mounts were empty and MySQL never became healthy. README fixed (clone under
+  `~`), second clone passed: lab up, 667 unit tests, a lock-wait injection
+  diagnosed as `lock_wait`, quick set 4/5 with no false positive.
+- Step 7: tag `submittable-v1` on `docs/submission` (8eb16a3), pushed. Not on
+  `main`: merging these branches needs the owner's approval.
+- Step 8a `make demo` (`feat/demo`): 82 s end to end; cascade diagnosed as
+  `missing_index_slow_query` with the symptom, the gate rehearsed
+  `order_items(product_id, quantity)` at low risk. Review approved; verify passed.
+- Step 8b vector retrieval (`feat/vector-retrieval`): reworded queries hit@1
+  5/8 (keyword 3/8), hit@3 8/8 (keyword 6/8); queries worded like the runbooks
+  8/8 for both. Not tuned. Two review findings fixed; verify passed.
+- Step 8c inspection agent (`feat/inspection`): risks only; three review
+  findings fixed (stopped metric read as no risk, one error ended the loop,
+  `--count 0`); three lab tests pass; verify passed.
+
+Each feature branch is stacked on the previous one, so merging
+`feat/inspection` brings in all of them. Waiting for the owner's approval.

@@ -186,3 +186,29 @@ Approved after two review rounds. Left as known:
 - **Unique indexes are not supported** by design: a duplicate would fail the
   build half-way.
 
+
+## Incident replays (2026-11-22)
+
+One review round. Left as known:
+
+- **Honeycomb replay: the diagnosis crashes instead of answering.** With MySQL
+  at 0.05 CPU, an evidence query timed out (`OperationalError 2013`) and the
+  error escaped the orchestrator, so the case scores `diagnosis_error`. The
+  intended behaviour is a failed collection round leading to `undetermined`.
+  Not fixed, because the replay set is not tuned to; a fix would have to be
+  justified on its own and re-checked on the full set.
+- **The Honeycomb alert mentions refused connections** (reviewer, suspected:
+  close to stating the answer). It describes the symptom the postmortem
+  reports (Error 1040); kept as run.
+- **The Honeycomb link serves a different article to automated fetches**
+  (2026-11-22: a .NET benchmark post), while search engines index the
+  postmortem at the same address. The facts used (P95 11 ms to over 1,000 ms,
+  `max_connections` passed, Error 1040) come from the indexed text. An earlier
+  note in the case said "degraded RDS hardware"; that could not be verified and
+  was removed (the `notes` field only; nothing scored changed).
+
+## Live demo (`make demo`, 2026-11-22)
+
+One review round, approved. Left as known: if the final `clear` itself fails
+(MySQL unreachable), its error replaces the original one on screen. The fault
+has already been stopped by then; only the first message is lost.

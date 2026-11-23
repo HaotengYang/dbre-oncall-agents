@@ -14,3 +14,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Embedding model for optional vector retrieval (scripts/fetch_embedding_model.py)
+/models

@@ -36,8 +36,22 @@ def load_holdout_cases():
     return cases
 
 
+INCIDENT_DIRECTORY_NAME = "incident-replays"
+
+
+def load_incident_cases():
+    """Replays of public incidents: their own directory, never in the full set."""
+    cases = load_cases(EVALS_DIRECTORY / INCIDENT_DIRECTORY_NAME)
+    for case in cases:
+        if case.tier != "incident":
+            raise CaseError(f"case '{case.case_id}' is in incident-replays but not tier incident")
+    return cases
+
+
 def select_cases(all_cases, set_name, case_id):
-    if set_name == "holdout":
+    if set_name == "incidents":
+        all_cases = load_incident_cases()
+    elif set_name == "holdout":
         all_cases = load_holdout_cases()
     elif set_name == "all":
         all_cases = list(all_cases) + load_holdout_cases()
@@ -46,7 +60,7 @@ def select_cases(all_cases, set_name, case_id):
         if not selected:
             raise CaseError(f"no case with id '{case_id}'")
         return selected
-    if set_name in ("full", "holdout", "all"):
+    if set_name in ("full", "holdout", "all", "incidents"):
         return all_cases
     sets = json.loads((EVALS_DIRECTORY / "sets.json").read_text())
     if set_name not in sets:
@@ -60,7 +74,7 @@ def select_cases(all_cases, set_name, case_id):
 
 def run_command(arguments):
     all_cases = load_cases(EVALS_DIRECTORY / "cases")
-    if any(case.tier == "holdout" for case in all_cases):
+    if any(case.tier in ("holdout", "incident") for case in all_cases):
         raise CaseError("a holdout-tier case is in evals/cases; holdout cases live in evals/holdout")
     cases = select_cases(all_cases, arguments.set, arguments.case)
     thresholds = load_thresholds(EVALS_DIRECTORY / "thresholds.json")
@@ -178,13 +192,29 @@ def retrieval_command(arguments):
     from diagnosis.retrieval import KeywordRetriever
     from eval_runner.retrieval_eval import (
         evaluate_retriever,
+        format_retrieval_comparison,
         format_retrieval_report,
         load_retrieval_queries,
     )
 
     queries = load_retrieval_queries(EVALS_DIRECTORY / "retrieval" / "queries.json")
-    retriever = KeywordRetriever()
-    print(format_retrieval_report(retriever.name, evaluate_retriever(retriever, queries)))
+    retrievers = []
+    if arguments.retriever in ("keyword", "compare"):
+        retrievers.append(KeywordRetriever())
+    if arguments.retriever in ("vector", "compare"):
+        from diagnosis.vector_retrieval import EmbeddingModelMissing, VectorRetriever
+        try:
+            retrievers.append(VectorRetriever())
+        except EmbeddingModelMissing as missing:
+            print(f"error: {missing}", file=sys.stderr)
+            return 2
+    rows_by_name = {}
+    for retriever in retrievers:
+        rows_by_name[retriever.name] = evaluate_retriever(retriever, queries)
+        print(format_retrieval_report(retriever.name, rows_by_name[retriever.name]))
+        print()
+    if len(rows_by_name) > 1:
+        print(format_retrieval_comparison(rows_by_name))
     return 0
 
 
@@ -225,7 +255,10 @@ def main(argument_list=None):
     replay_parser.add_argument("--repeats", type=int, default=5)
     replay_parser.add_argument("--max-calls", type=int, default=None,
                                help="stop after this many model calls (for cost calibration)")
-    commands.add_parser("retrieval", help="runbook retrieval hit rates (no lab needed)")
+    retrieval_parser = commands.add_parser("retrieval", help="runbook retrieval hit rates (no lab needed)")
+    retrieval_parser.add_argument(
+        "--retriever", choices=("keyword", "vector", "compare"), default="keyword",
+        help="keyword (default), vector (needs requirements-vector.txt and the model), or both side by side")
     arguments = parser.parse_args(argument_list)
     try:
         return {"run": run_command, "report": report_command, "record": record_command,

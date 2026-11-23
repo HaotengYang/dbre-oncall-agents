@@ -1,0 +1,21 @@
+{
+  "id": "incident-honeycomb-2018-05",
+  "tier": "incident",
+  "kind": "single_fault",
+  "scenario": "incident.honeycomb_2018_05_database_slows_down",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "Everything that touches the database got slow at once, and now the app keeps reporting that the database refuses new connections.",
+  "expected": {
+    "root_cause": "connection_exhaustion",
+    "also_acceptable": [
+      "undetermined"
+    ],
+    "symptoms": []
+  },
+  "source": {
+    "title": "Honeycomb, RDS performance degradation postmortem (2018-05-03)",
+    "url": "https://honeycomb.io/blog/rds-performance-degradation-postmortem",
+    "notes": "Original: the RDS MySQL instance degraded suddenly (P95 query time 11 ms to over 1000 ms) and load passed max_connections (Error 1040); the cause of the instance degradation is outside what a lab can reproduce. Lab: the MySQL container's CPU limit is cut to 0.05 so every statement is slow, and clients open new connections to compensate until error 1040. Expected answer: the hardware cause is outside the closed set of root causes; the one anomaly in the set that the evidence shows is exhausted connections held by ordinary, indexed statements, with no lock and no missing index. So connection_exhaustion is the hit and undetermined is acceptable; naming a missing index or a lock wait is a miss (the same rule as holdout H1)."
+  }
+}

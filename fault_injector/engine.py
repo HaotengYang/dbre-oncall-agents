@@ -7,7 +7,7 @@ import time
 
 import pymysql
 
-from fault_injector import records
+from fault_injector import container_limits, records
 from fault_injector.baseline import (
     DDL_LOCK_WAIT_TIMEOUT_SECONDS,
     end_orphaned_schema_sessions,
@@ -153,17 +153,23 @@ def injected_fault(fault_id, settings=None, state_directory=None):
                    "started_at": started_at,
                    "changes": list(fault.planned_changes)}
         finally:
+            # If the fault's own stop fails (for example the CPU limit could
+            # not be restored), the claim stays: the next inject is refused
+            # until `clear` has put the lab back.
+            fault_stopped = False
             try:
                 fault.stop(lab_access)
+                fault_stopped = True
             finally:
                 with contextlib.suppress(Exception):
                     control_connection.close()
                 restore_baseline_on_fresh_connection(settings)
-                records.record_injection_ended(
-                    state_directory, injection_id=injection_id,
-                    ended_at=current_timestamp(), ended_by="injector",
-                )
-                records.remove_claim(state_directory)
+                if fault_stopped:
+                    records.record_injection_ended(
+                        state_directory, injection_id=injection_id,
+                        ended_at=current_timestamp(), ended_by="injector",
+                    )
+                    records.remove_claim(state_directory)
     finally:
         records.release_injector_lock(injector_lock)
 
@@ -231,6 +237,15 @@ def clear_lab(settings=None, state_directory=None):
         ):
             actions.append(f"stopped running injector for {claim_while_held['fault_id']}")
     try:
+        # An interrupted incident replay can leave MySQL's CPU limit lowered.
+        # Docker being unreachable must not stop the rest of the clear.
+        try:
+            if container_limits.restore_cpu_limit():
+                actions.append("restored the MySQL container's CPU limit")
+        except Exception as error:
+            actions.append(
+                f"could not check the MySQL container's CPU limit ({type(error).__name__})"
+            )
         for restored_name in restore_baseline_on_fresh_connection(settings):
             actions.append(f"recreated index {restored_name}")
 
