@@ -56,7 +56,7 @@ multi-agent diagnosis system; this is a small, measurable version of both.
   little. The rule engine serves as a no-key fallback and a regression gate.
 - Two incident replays (GitHub 2022-03, Honeycomb 2018-05), not tuned to: the
   GitHub pattern was a hit; on the Honeycomb one the diagnosis crashed on a
-  query timeout instead of answering `undetermined`. Recorded, not fixed.
+  query timeout; fixed as error handling, so it is no longer blind.
 - The model path is implemented and unit-tested, but the full model comparison
   was not run, for cost control. Recorded evidence is kept locally; with a key
   in `.env`, `python -m eval_runner replay` reproduces it.
