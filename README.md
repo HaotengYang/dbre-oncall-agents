@@ -13,7 +13,7 @@ measures how often the diagnosis is right.
 | Lab | Docker Compose: MySQL 8.0 (1 CPU, 1 GiB), Prometheus, mysqld_exporter, a steady synthetic workload | `docker-compose.yml`, `lab/` |
 | Fault injector | Puts the lab into a known bad state and takes it back out: 3 fault classes, 2 to 3 variants each, cascades, healthy look-alikes, a hostile-input case | `fault_injector/` |
 | Diagnosis | Read-only evidence collection, a frozen rule engine, an SQL agent, a metrics agent, an orchestrator (up to three rounds, then "undetermined, escalate"), runbook retrieval | `diagnosis/` |
-| Model backend | The same evidence given to Claude models, answers constrained to a JSON schema | `diagnosis/llm.py` |
+| Model backend | The same evidence given to Claude models or any OpenAI-compatible API (Gemini), answers constrained to a JSON schema | `diagnosis/llm.py`, `diagnosis/llm_openai_compatible.py` |
 | Change safety gate | Adds an index only: allowlist, sample rehearsal, risk check, rollback plan, human confirmation | `change_gate/` |
 | Evals | 18 cases in two tiers, 4 holdout cases, 2 incident replays, end-to-end and replay layers, thresholds | `evals/` (data), `eval_runner/` (code) |
 
@@ -34,8 +34,8 @@ work: `docs/KNOWN_ISSUES.md`. How Claude Code was used: `AI_WORKFLOW.md`.
     `{"cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]}` to
     `~/.docker/config.json`.
 - About 2 GB of disk for images. Ports 13306, 13307 and 19090 free on localhost.
-- Optional: an Anthropic API key, only for the model comparison. Everything
-  else runs without one; the system then uses the rule engine.
+- Optional: an Anthropic and/or Gemini API key, only for the model comparison.
+  Everything else runs without one; the system then uses the rule engine.
 
 ## Set up
 
@@ -49,7 +49,7 @@ make up                       # starts the lab and waits until it is healthy (ab
 
 Passwords in `.env` may only contain letters, digits, `-` and `_`. `.env` is
 ignored by git; never commit it. For the model comparison, add
-`ANTHROPIC_API_KEY=...` to `.env`.
+`ANTHROPIC_API_KEY=...` and/or `GEMINI_API_KEY=...` to `.env`.
 
 If the lab ever refuses to become healthy after a failed first start, run
 `make reset` (it deletes the lab's data volume and rebuilds it from the seed).
@@ -108,7 +108,7 @@ open longer than a minute, and frequent statements that use no index.
 | `python -m eval_runner run --set holdout` | The 4 holdout cases (no thresholds) | about 8 minutes |
 | `python -m eval_runner run --set incidents` | The 2 incident replays (no thresholds) | about 4 minutes |
 | `python -m eval_runner record --set all` | Runs all 22 cases and saves the evidence for replay | about 40 minutes |
-| `python -m eval_runner replay` | Gives recorded evidence to the approved models; costs money, capped | depends |
+| `python -m eval_runner replay --set everything` | Gives the recorded evidence of all 24 cases to the approved models; costs money, capped at 10 USD in total | about 15 minutes |
 | `python -m eval_runner retrieval` | Runbook retrieval hit rates (keyword) | seconds |
 | `python -m eval_runner retrieval --retriever compare` | Keyword and vector retrieval side by side (needs the optional install below) | about 10 seconds |
 
@@ -159,12 +159,39 @@ listed as high risk once it is a minute old, a frequent unindexed query on
 `order_items` is listed, and the quiet baseline shows neither. A connection
 metric that stops is reported as a risk, never as a clear.
 
-### Model comparison: not run
+### Model comparison (replay layer)
 
-The model path (`diagnosis/llm.py`) is implemented and has unit tests. The full
-model comparison was not run, for cost control. The recorded evidence of 22
-cases is kept locally (`var/recordings/`); with an `ANTHROPIC_API_KEY` in `.env`,
-one command reproduces it: `python -m eval_runner replay`. Spend so far: 0 USD.
+Every backend got the same recorded evidence for all 24 cases (basic, hard,
+holdout, incident replays), so these numbers measure reasoning only, not
+evidence collection; the end-to-end numbers above are a separate layer. Hit
+rate and false-positive rate per tier, every run counted; stability is the
+share of cases whose repeated answers agreed.
+
+| Backend | Basic hit | Basic FP | Hard hit | Hard FP | Holdout hit | Holdout FP | Incidents hit | Incidents FP | Stability | Mean time | No answer | Spent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Rule engine | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 33% (1/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | <0.1 s | 0 | 0.00 USD |
+| claude-haiku-5-5, 3 runs | 100% (18/18) | 0% (0/6) | 75% (18/24) | 0% (0/6) | 78% (7/9) | 0% (0/3) | 100% (6/6) | n/a | 96% (23/24) | 2.8 s | 0 | 0.04 USD |
+| claude-sonnet-5-5, 1 run | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | 2.9 s | 0 | 0.20 USD |
+| claude-opus-5-5, 1 run | 100% (6/6) | 0% (0/2) | 75% (6/8) | 0% (0/2) | 67% (2/3) | 0% (0/1) | 100% (2/2) | n/a | 1 run | 3.6 s | 0 | 0.43 USD |
+
+- Order run, cheapest first: Gemini 3.8 Flash and Claude Haiku 5.5 three times
+  per case, then Sonnet 5.5 and Opus 5.5 once. Cap 10 USD for everything.
+- **Gemini 3.8 Flash did not run**: every call timed out (180 s) or was refused
+  as overloaded or rate-limited, in two attempts. It has no answers to score.
+- Spent: 1.05 USD by the ledger, an upper bound. 0.66 USD is measured Claude
+  usage; 0.39 USD is six Gemini calls that returned nothing, charged at their
+  worst case because their real cost is unknown.
+- The incident rows are replays of the recordings made after the crash fix, so
+  the Honeycomb case is not blind here either.
+
+**What the data supports:** on the same evidence, the three Claude models
+matched the rule engine on the basic, hard and incident cases and made no false
+positive. They did better only on the holdout set (Haiku 7/9 over three runs,
+Sonnet and Opus 2/3 each, the rule engine 1/3), which has three fault cases, so
+the difference rests on very few cases. Haiku was the cheapest and fastest.
+
+Reproduce: `python -m eval_runner replay --set everything --models <model> --repeats <n>`,
+then `python scripts/replay_table.py <reports>`.
 
 ### Incident replays
 

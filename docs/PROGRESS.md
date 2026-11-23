@@ -499,3 +499,10 @@ install, so keyword retrieval still runs with no extra dependency.
 
 Each feature branch is stacked on the previous one, so merging
 `feat/inspection` brings in all of them. Waiting for the owner's approval.
+
+## Model comparison (2026-11-23)
+
+Replay of all 24 recordings. Claude Haiku 5.5 x3, Sonnet 5.5 x1, Opus 5.5 x1
+completed; Gemini 3.8 Flash skipped (timeouts, then 503/429 through every
+wait, two attempts). Ledger 1.05 of 10 USD. Table and conclusion: README,
+"Model comparison (replay layer)".
