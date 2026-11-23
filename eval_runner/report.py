@@ -50,8 +50,10 @@ def format_report(results, backend_name, aborted_reason=None):
         "hard": "HARD TIER",
         "holdout": "HOLDOUT (designed without sight of the rule engine; no thresholds; "
                    "not included in ALL CASES)",
+        "incident": "INCIDENT REPLAYS (patterns of public incidents; no thresholds; "
+                    "not included in ALL CASES)",
     }
-    for tier in ("basic", "hard", "holdout"):
+    for tier in ("basic", "hard", "holdout", "incident"):
         tier_results = [r for r in results if r.case.tier == tier]
         if not tier_results:
             continue
@@ -62,7 +64,7 @@ def format_report(results, backend_name, aborted_reason=None):
         sections += [tier_headings[tier], _table(rows), ""]
         sections += [_table([("number", "value", "meaning")] + _rate_lines(summarize(results, tier))), ""]
 
-    non_holdout = [r for r in results if r.case.tier != "holdout"]
+    non_holdout = [r for r in results if r.case.tier in ("basic", "hard")]
     if non_holdout:
         sections += ["ALL CASES (basic and hard)",
                      _table([("number", "value", "meaning")] + _rate_lines(summarize(non_holdout))), ""]
@@ -123,7 +125,8 @@ def results_as_json(results, backend_name, aborted_reason=None):
             "basic": summary_json(summarize(results, "basic")),
             "hard": summary_json(summarize(results, "hard")),
             "holdout": summary_json(summarize(results, "holdout")),
-            "all": summary_json(summarize([r for r in results if r.case.tier != "holdout"])),
+            "incident": summary_json(summarize(results, "incident")),
+            "all": summary_json(summarize([r for r in results if r.case.tier in ("basic", "hard")])),
         },
     }
 

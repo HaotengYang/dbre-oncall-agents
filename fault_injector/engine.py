@@ -231,6 +231,10 @@ def clear_lab(settings=None, state_directory=None):
         ):
             actions.append(f"stopped running injector for {claim_while_held['fault_id']}")
     try:
+        # An interrupted incident replay can leave MySQL's CPU limit lowered.
+        from fault_injector.container_limits import restore_cpu_limit
+        if restore_cpu_limit():
+            actions.append("restored the MySQL container's CPU limit")
         for restored_name in restore_baseline_on_fresh_connection(settings):
             actions.append(f"recreated index {restored_name}")
 

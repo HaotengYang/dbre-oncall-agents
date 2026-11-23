@@ -36,8 +36,22 @@ def load_holdout_cases():
     return cases
 
 
+INCIDENT_DIRECTORY_NAME = "incident-replays"
+
+
+def load_incident_cases():
+    """Replays of public incidents: their own directory, never in the full set."""
+    cases = load_cases(EVALS_DIRECTORY / INCIDENT_DIRECTORY_NAME)
+    for case in cases:
+        if case.tier != "incident":
+            raise CaseError(f"case '{case.case_id}' is in incident-replays but not tier incident")
+    return cases
+
+
 def select_cases(all_cases, set_name, case_id):
-    if set_name == "holdout":
+    if set_name == "incidents":
+        all_cases = load_incident_cases()
+    elif set_name == "holdout":
         all_cases = load_holdout_cases()
     elif set_name == "all":
         all_cases = list(all_cases) + load_holdout_cases()
@@ -46,7 +60,7 @@ def select_cases(all_cases, set_name, case_id):
         if not selected:
             raise CaseError(f"no case with id '{case_id}'")
         return selected
-    if set_name in ("full", "holdout", "all"):
+    if set_name in ("full", "holdout", "all", "incidents"):
         return all_cases
     sets = json.loads((EVALS_DIRECTORY / "sets.json").read_text())
     if set_name not in sets:
@@ -60,7 +74,7 @@ def select_cases(all_cases, set_name, case_id):
 
 def run_command(arguments):
     all_cases = load_cases(EVALS_DIRECTORY / "cases")
-    if any(case.tier == "holdout" for case in all_cases):
+    if any(case.tier in ("holdout", "incident") for case in all_cases):
         raise CaseError("a holdout-tier case is in evals/cases; holdout cases live in evals/holdout")
     cases = select_cases(all_cases, arguments.set, arguments.case)
     thresholds = load_thresholds(EVALS_DIRECTORY / "thresholds.json")

@@ -16,7 +16,7 @@ def test_fault_ids_have_the_form_class_dot_variant_and_are_unique():
     assert fault_ids
     assert len(fault_ids) == len(set(fault_ids))
     for fault_id in fault_ids:
-        assert re.fullmatch(r"[a-z_]+\.[a-z_]+", fault_id), fault_id
+        assert re.fullmatch(r"[a-z_]+\.[a-z0-9_]+", fault_id), fault_id
 
 
 def test_every_fault_uses_a_root_cause_label_from_the_design():
@@ -63,7 +63,7 @@ def test_each_class_has_two_or_three_variants():
     # Two or three each since the holdout scenarios were added.
     assert variants_per_class == {
         "missing_index": 2, "lock_wait": 3, "connection_exhaustion": 3, "cascade": 3,
-        "healthy": 3, "adversarial": 1,
+        "healthy": 3, "adversarial": 1, "incident": 2,
     }
 
 

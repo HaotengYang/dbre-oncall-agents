@@ -320,7 +320,8 @@ def format_replay_report(results, stop_reason=None):
     backends = list(dict.fromkeys(result.backend for result in results))
     lines = [REPLAY_HEADING, ""]
     for tier, heading in (("basic", "BASIC TIER"), ("hard", "HARD TIER"),
-                          ("holdout", "HOLDOUT (no thresholds; nothing tuned to it)")):
+                          ("holdout", "HOLDOUT (no thresholds; nothing tuned to it)"),
+                          ("incident", "INCIDENT REPLAYS (no thresholds; nothing tuned to them)")):
         rows = [("backend", "hit rate", "false positives", "symptom as cause", "undetermined",
                  "index correct", "stable", "mean s", "cost USD")]
         for backend in backends:

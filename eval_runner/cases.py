@@ -7,7 +7,7 @@ from typing import Optional
 
 FAULT_LABELS = ("missing_index_slow_query", "lock_wait", "connection_exhaustion")
 ANSWER_LABELS = FAULT_LABELS + ("healthy", "undetermined")
-TIERS = ("basic", "hard", "holdout")
+TIERS = ("basic", "hard", "holdout", "incident")
 KINDS = (
     "single_fault", "healthy", "healthy_lookalike", "cascade",
     "incomplete_evidence", "hostile_input", "metrics_gap",
@@ -59,6 +59,9 @@ def _labels(value, allowed, field_name, case_path):
     return tuple(value)
 
 
+OPTIONAL_TOP_LEVEL_FIELDS = ("source",)
+
+
 def load_case(case_path):
     case_path = pathlib.Path(case_path)
     try:
@@ -66,7 +69,12 @@ def load_case(case_path):
     except ValueError as parse_error:
         raise CaseError(f"{case_path.name}: not valid JSON ({parse_error})") from None
 
-    _check_fields(content, TOP_LEVEL_FIELDS, (), "the case", case_path)
+    _check_fields(content, TOP_LEVEL_FIELDS, OPTIONAL_TOP_LEVEL_FIELDS, "the case", case_path)
+    if "source" in content:
+        source = content["source"]
+        if not isinstance(source, dict) or not isinstance(source.get("url"), str) \
+                or not source["url"].startswith("https://"):
+            raise CaseError(f"{case_path.name}: 'source' must be an object with an https url")
 
     def fail(field_name, problem):
         raise CaseError(f"{case_path.name}: '{field_name}' {problem}, got {content[field_name]!r}")

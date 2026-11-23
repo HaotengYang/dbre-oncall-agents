@@ -7,6 +7,10 @@ from fault_injector.faults.cascade import (
 )
 from fault_injector.faults.connection_exhaustion import GradualLeak, IdleFlood
 from fault_injector.faults.healthy import HEALTHY_LABEL, HighLoad, SlowReport
+from fault_injector.faults.incidents import (
+    GitHub2022QueryDegradesAtPeak,
+    Honeycomb2018DatabaseSlowsDown,
+)
 from fault_injector.faults.holdout import (
     ActiveSlowCalls,
     ProductsRowLock,
@@ -38,6 +42,9 @@ _FAULT_CLASSES = (
     UnindexedUpdateBlocksWriters,
     ProductsRowLock,
     SteadyIdlePool,
+    # Incident replays (evals/incident-replays/).
+    GitHub2022QueryDegradesAtPeak,
+    Honeycomb2018DatabaseSlowsDown,
 )
 
 

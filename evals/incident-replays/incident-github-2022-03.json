@@ -1,0 +1,28 @@
+{
+  "id": "incident-github-2022-03",
+  "tier": "incident",
+  "kind": "cascade",
+  "scenario": "incident.github_2022_03_query_degrades_at_peak",
+  "observe_seconds": 45,
+  "admin_port_available": true,
+  "alert": "During the busiest hour, requests for order history slowed to a crawl, then the app started failing to save anything because it could not get a database connection.",
+  "expected": {
+    "root_cause": "missing_index_slow_query",
+    "also_acceptable": [],
+    "symptoms": [
+      "connection_exhaustion"
+    ],
+    "index": {
+      "table": "orders",
+      "columns": [
+        "customer_id",
+        "created_at"
+      ]
+    }
+  },
+  "source": {
+    "title": "GitHub, An update on recent service disruptions (2022-03-16 incident)",
+    "url": "https://github.blog/news-insights/company-news/an-update-on-recent-service-disruptions/",
+    "notes": "Same pattern: a poorly performing query at peak load exhausted database proxy connections and writes failed; fixed by adding an index. Lab: an index is dropped and peak traffic arrives on new connections."
+  }
+}

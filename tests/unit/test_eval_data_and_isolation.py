@@ -421,3 +421,22 @@ def test_report_shows_holdout_apart_and_leaves_it_out_of_all_cases():
     assert summary["all"]["hit_rate"]["text"] == "100.0% (1/1)"
     assert summary["holdout"]["hit_rate"]["text"] == "0.0% (0/1)"
     assert summary["holdout"]["false_positive_rate"]["text"] == "100.0% (1/1)"
+
+
+def test_incident_replays_are_two_with_sources_and_match_their_scenarios():
+    from eval_runner.cli import load_incident_cases
+
+    incidents = {case.case_id: case for case in load_incident_cases()}
+
+    assert sorted(incidents) == ["incident-github-2022-03", "incident-honeycomb-2018-05"]
+    github, honeycomb = incidents["incident-github-2022-03"], incidents["incident-honeycomb-2018-05"]
+    assert (github.expected_root_cause, github.expected_symptoms) == (
+        "missing_index_slow_query", ("connection_exhaustion",))
+    assert (honeycomb.expected_root_cause, honeycomb.also_acceptable) == (
+        "connection_exhaustion", ("undetermined",))
+    for case in incidents.values():
+        scenario = find_fault(case.scenario)
+        assert scenario.root_cause == case.expected_root_cause
+        assert set(scenario.expected_symptoms) == set(case.expected_symptoms)
+    assert all(case.tier != "incident" for case in select_cases(ALL_CASES, "all", None))
+    assert len(select_cases(ALL_CASES, "incidents", None)) == 2
