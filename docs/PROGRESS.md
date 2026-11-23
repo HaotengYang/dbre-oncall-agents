@@ -69,9 +69,10 @@ Sunday 11-22, Monday 11-23 for rehearsal and submission only.
 
 ### D. Change safety gate
 
-- [ ] D1. Proposal and completion criteria
-- [ ] D2. Allowlist and property-based tests
-- [ ] D3. Shadow rehearsal, risk assessment, rollback plan
+- [x] D1. Proposal and completion criteria (`docs/proposals/D-change-gate.md`)
+- [x] D2. Allowlist and property-based tests
+- [x] D3. Shadow rehearsal, risk assessment, rollback plan. Reviewed until approved
+      (two rounds)
 
 ### E. Wrap-up
 
@@ -417,4 +418,15 @@ first run is `hard-early-long-transaction`, a hit this time and a miss before:
 three seconds into a fault, whether a blocked update has been caught waiting
 is chance. Evidence for all 22 cases is recorded in `var/recordings/` (not in
 git) and ready for replay.
+
+## Step D, change safety gate (2026-11-21)
+
+`python -m change_gate plan --table orders --columns status,created_at --query "..."`
+rehearses on 20,000 of 200,000 rows in `shop_shadow`, reports whether the
+target query uses the new index on the sample, the risk level and reasons,
+and the rollback statement. `apply` asks for confirmation. Unit tests 650;
+gate lab tests 6. Round 1 of review found six defects, the most serious being
+that the sample copy took shared row locks on production rows under the
+default isolation level, and that the target-query EXPLAIN lacked the
+read-only session and timeout the diagnosis side uses.
 
